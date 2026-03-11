@@ -2,6 +2,7 @@ const express = require('express');
 const userRouter = require('./routes/user.route');
 const authRouter = require('./routes/auth.route');
 const fileRouter = require('./routes/file.route');
+const demandeRoutes = require("./routes/demande.routes");
 
 const logRouter = require("./routes/log.route");
 
@@ -19,5 +20,5 @@ app.use('/user', userRouter);
 app.use('/auth', authRouter);
 app.use('/file', fileRouter);
 app.use('/logs', logRouter);
-
+app.use("/demandes", demandeRoutes);
 module.exports = app;

@@ -9,6 +9,7 @@ const userSchema = new mongoose.Schema(
             required: [true, 'Email is required'],
             unique: true,
             lowercase:true,
+            trum:true
         },
         firstName: {
             type: String,
@@ -20,6 +21,10 @@ const userSchema = new mongoose.Schema(
             required: [true, 'Last Name is required'],
              trim:true,
         },
+        telephone: {
+      type: String,
+      trim: true
+    },
         password: {
             type: String,
             required: [true, 'Password is required'],
@@ -42,8 +47,29 @@ const userSchema = new mongoose.Schema(
         },
         avatar: {
             type: String
-        }
-    }, { timestamps: true })
+        },
+         dateDiagnostic: {
+      type: Date
+    },
+    region: {
+      type: String,
+      trim: true
+    },
+    nomOrganisation: {
+      type: String,
+      trim: true
+    },
+    adresse: {
+      type: String,
+      trim: true
+    },
+    competences: [{
+      type: String,
+      trim: true
+    }]
+  
+    }, 
+    { timestamps: true })
 
 userSchema.pre('save', async function (next){
     // Modifiction password
