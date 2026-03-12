@@ -90,11 +90,13 @@ async function login(req, res) {
         // case2.2: password correct -> generation auth token
         const token = generateToken(user._id);
         res.status(200).json({
+            status:true,
             message: "logged in successfully",
             token
         })
     } catch (error) {
         res.status(500).json({
+            status: false,
             message: error.message
         })
     }
