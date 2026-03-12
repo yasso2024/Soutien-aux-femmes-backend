@@ -73,9 +73,9 @@ const userSchema = new mongoose.Schema(
 
 userSchema.pre('save', async function (next){
     // Modifiction password
-});
+
 // pre-hook
-userSchema.pre('save', async function (){
+
     // Comapring and Hashing Passwords
     if (this.password !== this.confirmPassword) {
         throw new Error("Passwords doesn't match");
@@ -86,7 +86,7 @@ userSchema.pre('save', async function (){
     this.password = await bcrypt.hash(this.password, salt);
 
     this.confirmPassword = undefined;
-})
+});
 // compare passwoed
 userSchema.methods.comparePassword = async function (candidatePassword) {
     return await bcrypt.compare(candidatePassword, this.password)

@@ -37,11 +37,7 @@ const demandeSchema = new mongoose.Schema({
     ref: 'users'
   },
 
-  don: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'dons',
-    default: null
-  }
+ 
 }, { timestamps: true });
 
 const demandeModel = mongoose.model('demandes', demandeSchema);

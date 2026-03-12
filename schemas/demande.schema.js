@@ -11,7 +11,6 @@ const updateDemandeSchema = z.object({
   description: z.string().min(1).optional(),
   type: z.enum(['FINANCIERE', 'MATERIELLE', 'ACCOMPAGNEMENT', 'LOGEMENT']).optional(),
   statut: z.enum(['EN_ATTENTE', 'VALIDEE', 'REFUSEE', 'EN_COURS', 'TERMINEE']).optional(),
-  don: z.string().optional().nullable()
 });
 
 module.exports = { createDemandeSchema, updateDemandeSchema };
