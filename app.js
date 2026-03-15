@@ -3,7 +3,7 @@ const userRouter = require('./routes/user.route');
 const authRouter = require('./routes/auth.route');
 const fileRouter = require('./routes/file.route');
 const demandeRoutes = require("./routes/demande.routes");
-
+const  donRouter =require("./routes/don.route")
 const logRouter = require("./routes/log.route");
 
 const cors = require('cors');
@@ -21,4 +21,6 @@ app.use('/auth', authRouter);
 app.use('/file', fileRouter);
 app.use('/logs', logRouter);
 app.use("/demandes", demandeRoutes);
+app.use('/dons', donRouter);
+
 module.exports = app;
