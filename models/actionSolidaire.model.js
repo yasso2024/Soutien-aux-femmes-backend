@@ -1,0 +1,30 @@
+const mongoose = require('mongoose');
+
+const actionSolidaireSchema = new mongoose.Schema({
+  titre: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  description: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  dateAction: {
+    type: Date,
+    required: true
+  },
+  association: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'users',
+    required: true
+  },
+  benevoles: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'users'
+  }]
+}, { timestamps: true });
+
+const actionSolidaireModel = mongoose.model('actionsSolidaires', actionSolidaireSchema);
+module.exports = actionSolidaireModel;

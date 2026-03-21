@@ -36,7 +36,10 @@ const demandeSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'users'
   },
-
+ don: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'dons'
+  }
  
 }, { timestamps: true });
 

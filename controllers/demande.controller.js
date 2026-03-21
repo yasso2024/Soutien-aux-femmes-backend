@@ -36,7 +36,7 @@ async function listDemandes(req, res) {
       .find()
       .populate('femme', 'firstName lastName email role')
       .populate('validePar', 'firstName lastName email role')
-   
+     .populate('don');
 
     res.status(200).json({ status: true, demandes });
   } catch (error) {
@@ -50,7 +50,7 @@ async function getDemande(req, res) {
       .findById(req.params.id)
       .populate('femme', 'firstName lastName email role')
       .populate('validePar', 'firstName lastName email role')
-    
+      .populate('don');
 
     if (!demande) {
       return res.status(404).json({ status: false, message: 'Demande introuvable' });

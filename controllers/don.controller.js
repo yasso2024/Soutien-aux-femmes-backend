@@ -79,6 +79,11 @@ async function updateDon(req, res) {
       runValidators: true
     });
 
+    await saveLog({
+      action: `${req.user.firstName} a modifié un don`,
+      actorId: req.user._id,
+    });
+
     res.status(200).json({
       status: true,
       message: 'Don mis à jour avec succès',
