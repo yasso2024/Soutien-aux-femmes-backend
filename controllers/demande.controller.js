@@ -32,11 +32,22 @@ async function createDemande(req, res) {
 
 async function listDemandes(req, res) {
   try {
+    const filter = {};
+
+    if (req.query.femme) {
+      filter.femme = req.query.femme;
+    }
+
+    if (req.query.statut) {
+      filter.statut = req.query.statut;
+    }
+
     const demandes = await demandeModel
-      .find()
+      .find(filter)
       .populate('femme', 'firstName lastName email role')
       .populate('validePar', 'firstName lastName email role')
-     .populate('don');
+      .populate('don')
+      .sort({ createdAt: -1 });
 
     res.status(200).json({ status: true, demandes });
   } catch (error) {

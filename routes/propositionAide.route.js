@@ -5,7 +5,8 @@ const {
   listPropositionsAide,
   getPropositionAide,
   updatePropositionAide,
-  deletePropositionAide
+  deletePropositionAide,
+  changePropositionStatus
 } = require('../controllers/propositionAide.controller');
 
 const router = express.Router();
@@ -13,6 +14,7 @@ const router = express.Router();
 router.post('/', protect, createPropositionAide);
 router.get('/', protect, listPropositionsAide);
 router.get('/:id', protect, getPropositionAide);
+router.put('/:id/statut', protect, changePropositionStatus);
 router.put('/:id', protect, updatePropositionAide);
 router.delete('/:id', protect, deletePropositionAide);
 

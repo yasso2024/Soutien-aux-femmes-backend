@@ -148,9 +148,14 @@ async function deleteUser(req, res) {
 }
 
 async function listUsers(req, res) {
-    try {
-        console.log("Current logged in user: ", req.user);
-        const users = await userModel.find();
+     try {
+    const filter = {};
+
+    if (req.query.role) {
+      filter.role = req.query.role;
+    }
+
+    const users = await userModel.find(filter).sort({ createdAt: -1 });
 
         return res.status(200).json({
             status: true,

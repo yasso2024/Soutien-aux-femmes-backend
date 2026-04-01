@@ -36,9 +36,20 @@ async function createDon(req, res) {
 
 async function listDons(req, res) {
   try {
-    const dons = await donModel.find()
+    const filter = {};
+
+    if (req.query.donateur) {
+      filter.donateur = req.query.donateur;
+    }
+
+    if (req.query.statut) {
+      filter.statut = req.query.statut;
+    }
+
+    const dons = await donModel.find(filter)
       .populate('donateur', 'firstName lastName email role')
-      .populate('demande');
+      .populate('demande')
+      .sort({ createdAt: -1 });
 
     res.status(200).json({ status: true, dons });
   } catch (error) {

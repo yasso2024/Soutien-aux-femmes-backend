@@ -121,10 +121,38 @@ async function deletePropositionAide(req, res) {
   }
 }
 
+async function changePropositionStatus(req, res) {
+  try {
+    const { statut } = req.body;
+    const allowed = ['PROPOSEE', 'ACCEPTEE', 'REFUSEE'];
+    if (!allowed.includes(statut)) {
+      return res.status(400).json({ status: false, message: 'Statut invalide' });
+    }
+
+    const proposition = await propositionAideModel.findById(req.params.id);
+    if (!proposition) {
+      return res.status(404).json({ status: false, message: 'Proposition introuvable' });
+    }
+
+    proposition.statut = statut;
+    await proposition.save();
+
+    await saveLog({
+      action: `${req.user.firstName} a changé le statut d'une proposition à ${statut}`,
+      actorId: req.user._id
+    });
+
+    res.status(200).json({ status: true, message: 'Statut mis à jour', proposition });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+}
+
 module.exports = {
   createPropositionAide,
   listPropositionsAide,
   getPropositionAide,
   updatePropositionAide,
-  deletePropositionAide
+  deletePropositionAide,
+  changePropositionStatus
 };

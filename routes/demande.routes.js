@@ -15,6 +15,7 @@ router.post('/', protect, createDemande);
 router.get('/', protect, listDemandes);
 router.get('/:id', protect, getDemande);
 router.put('/:id', protect, updateDemande);
+router.put('/:id/statut', protect, changeDemandeStatus);
 router.delete('/:id', protect, deleteDemande);
 
 module.exports = router;

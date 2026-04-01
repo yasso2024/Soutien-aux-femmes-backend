@@ -11,6 +11,10 @@ const signUpSchema = z.object({
         .min(8, { message: "Password must be greater than 8 chars" })
         .max(32, { message: "Password must be less than 32 chars" }),
     dob: z.string().optional(),
+    telephone: z.string().min(1, { message: "Telephone is required" }),
+  region: z.string().min(1, { message: "Region is required" }),
+  role: z.enum([  "USER","FEMME MALADE","ADMINISTRATEUR", "BENEVOLE", "DONTEUR","ASSOCIATION",
+  ]),
 });
 
 const loginSchema = z.object({

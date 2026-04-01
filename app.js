@@ -5,9 +5,16 @@ const fileRouter = require('./routes/file.route');
 const demandeRoutes = require("./routes/demande.routes");
 const  donRouter =require("./routes/don.route")
 const logRouter = require("./routes/log.route");
-
+const evenementRouter = require("./routes/evenement.routes");
+const adminRouter = require("./routes/admin.route");
+const actionSolidaireRouter = require("./routes/actionSolidaire.route");
+const propositionAideRouter = require("./routes/propositionAide.route");
+const affectationRouter = require("./routes/affectation.route");
+const notificationRouter = require("./routes/notification.route");
+const chatbotRouter = require("./routes/chatbot.route");
 const cors = require('cors');
 const path = require('path');
+
 
 const app = express();
 app.use(cors());
@@ -22,5 +29,12 @@ app.use('/file', fileRouter);
 app.use('/logs', logRouter);
 app.use("/demandes", demandeRoutes);
 app.use('/dons', donRouter);
+app.use('/evenements', evenementRouter);
+app.use("/admin", adminRouter);
 
+app.use('/actions-solidaires', actionSolidaireRouter);
+app.use('/propositions-aide', propositionAideRouter);
+app.use('/affectations', affectationRouter);
+app.use("/chatbot", chatbotRouter);
+app.use('/notifications', notificationRouter);
 module.exports = app;

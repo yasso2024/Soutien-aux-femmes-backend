@@ -9,11 +9,13 @@ async function signUp(req, res) {
 
         if (!validation.success) {
             return res.status(400).json({
+                status: false,
+                message: "Validation failed",
                 errors: validation.error.flatten()
             })
         };
         // firstName, lastName, email, password, confirmPassword, dob
-        const { firstName, lastName, email, password, confirmPassword, dob } = req.body;
+        const { firstName, lastName, email, password, confirmPassword, dob ,telephone,role,region} = req.body;
 
         const existingUser = await userModel.findOne({ email });
 
@@ -30,11 +32,15 @@ async function signUp(req, res) {
             lastName: lastName,
             password: password,
             confirmPassword: confirmPassword,
-            dob: dob
+            dob: dob,
+            telephone:telephone,
+            role:role,
+            region: region
         })
 
         await user.save();
-
+   // Générer token après création
+    const token = generateToken(user._id);
         // SEND WELCOME MAIL (TODO)
         const options = {
             email: email,
