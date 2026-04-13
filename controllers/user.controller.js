@@ -169,4 +169,17 @@ async function listUsers(req, res) {
     }
 }
 
-module.exports = { createUser, putUser, deleteUser, getUser, listUsers };
+async function savePlayerID(req, res) {
+  try {
+    const { playerId } = req.body;
+    if (!playerId) {
+      return res.status(400).json({ status: false, message: 'playerId requis' });
+    }
+    await userModel.findByIdAndUpdate(req.user._id, { oneSignalPlayerId: playerId });
+    res.status(200).json({ status: true, message: 'Player ID enregistré' });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+}
+
+module.exports = { createUser, putUser, deleteUser, getUser, listUsers, savePlayerID };

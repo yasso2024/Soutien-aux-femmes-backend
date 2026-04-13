@@ -7,7 +7,7 @@ const createAffectationSchema = z.object({
 });
 
 const updateAffectationSchema = z.object({
-  statut: z.enum(['EN_ATTENTE', 'ACCEPTEE', 'TERMINEE']).optional(),
+  statut: z.enum(['EN_ATTENTE', 'ACCEPTEE', 'REFUSEE', 'TERMINEE']).optional(),
   demande: z.string().optional()
 });
 

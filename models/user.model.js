@@ -77,6 +77,10 @@ const userSchema = new mongoose.Schema(
         trim: true,
       },
     ],
+    oneSignalPlayerId: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true },
 );

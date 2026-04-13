@@ -1,6 +1,8 @@
 const propositionAideModel = require('../models/propositionAide.model');
+const demandeModel = require('../models/demande.model');
 const { createPropositionAideSchema, updatePropositionAideSchema } = require('../schemas/propositionAide.schema');
 const { saveLog } = require('../utils/logger');
+const { notifyUser } = require('../utils/notify');
 
 async function createPropositionAide(req, res) {
   try {
@@ -20,6 +22,17 @@ async function createPropositionAide(req, res) {
       actorId: req.user._id
     });
 
+    // Notify the femme malade who owns the demande
+    if (req.body.demande) {
+      const demande = await demandeModel.findById(req.body.demande).select('femme');
+      if (demande?.femme) {
+        await notifyUser(
+          demande.femme,
+          `Une association a proposé une aide pour votre demande.`
+        );
+      }
+    }
+
     res.status(201).json({
       status: true,
       message: 'Proposition créée avec succès',
@@ -38,13 +51,29 @@ async function listPropositionsAide(req, res) {
       filter.association = req.user._id;
     }
 
+    if (req.user.role === 'FEMME MALADE') {
+      const demandes = await demandeModel.find({ femme: req.user._id }).select('_id');
+      filter.demande = { $in: demandes.map((demande) => demande._id) };
+    }
+
     if (req.query.demande) {
-      filter.demande = req.query.demande;
+      if (req.user.role === 'FEMME MALADE') {
+        const demandes = await demandeModel.find({ femme: req.user._id, _id: req.query.demande }).select('_id');
+        filter.demande = { $in: demandes.map((demande) => demande._id) };
+      } else {
+        filter.demande = req.query.demande;
+      }
     }
 
     const propositions = await propositionAideModel.find(filter)
-      .populate('association', 'firstName lastName email nomOrganisation adresse role')
-      .populate('demande');
+      .populate('association', 'firstName lastName email nomOrganisation adresse role avatar')
+      .populate({
+        path: 'demande',
+        populate: {
+          path: 'femme',
+          select: 'firstName lastName email role avatar'
+        }
+      });
 
     res.status(200).json({ status: true, propositions });
   } catch (error) {
@@ -55,11 +84,24 @@ async function listPropositionsAide(req, res) {
 async function getPropositionAide(req, res) {
   try {
     const proposition = await propositionAideModel.findById(req.params.id)
-      .populate('association', 'firstName lastName email nomOrganisation adresse role')
-      .populate('demande');
+      .populate('association', 'firstName lastName email nomOrganisation adresse role avatar')
+      .populate({
+        path: 'demande',
+        populate: {
+          path: 'femme',
+          select: 'firstName lastName email role avatar'
+        }
+      });
 
     if (!proposition) {
       return res.status(404).json({ status: false, message: 'Proposition introuvable' });
+    }
+
+    if (req.user.role === 'FEMME MALADE') {
+      const femmeId = proposition?.demande?.femme?._id?.toString();
+      if (femmeId !== req.user._id.toString()) {
+        return res.status(403).json({ status: false, message: 'Accès non autorisé à cette proposition' });
+      }
     }
 
     res.status(200).json({ status: true, proposition });
@@ -129,9 +171,25 @@ async function changePropositionStatus(req, res) {
       return res.status(400).json({ status: false, message: 'Statut invalide' });
     }
 
-    const proposition = await propositionAideModel.findById(req.params.id);
+    const proposition = await propositionAideModel.findById(req.params.id).populate({
+      path: 'demande',
+      select: 'femme titre'
+    });
+
     if (!proposition) {
       return res.status(404).json({ status: false, message: 'Proposition introuvable' });
+    }
+
+    if (req.user.role === 'FEMME MALADE') {
+      const femmeId = proposition?.demande?.femme?.toString();
+
+      if (femmeId !== req.user._id.toString()) {
+        return res.status(403).json({ status: false, message: 'Accès non autorisé à cette proposition' });
+      }
+
+      if (!['ACCEPTEE', 'REFUSEE'].includes(statut)) {
+        return res.status(400).json({ status: false, message: 'La femme peut seulement accepter ou refuser la proposition' });
+      }
     }
 
     proposition.statut = statut;

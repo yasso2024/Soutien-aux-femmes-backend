@@ -48,7 +48,13 @@ async function listDons(req, res) {
 
     const dons = await donModel.find(filter)
       .populate('donateur', 'firstName lastName email role')
-      .populate('demande')
+      .populate({
+        path: 'demande',
+        populate: {
+          path: 'femme',
+          select: 'firstName lastName email role avatar'
+        }
+      })
       .sort({ createdAt: -1 });
 
     res.status(200).json({ status: true, dons });
@@ -61,7 +67,13 @@ async function getDon(req, res) {
   try {
     const don = await donModel.findById(req.params.id)
       .populate('donateur', 'firstName lastName email role')
-      .populate('demande');
+      .populate({
+        path: 'demande',
+        populate: {
+          path: 'femme',
+          select: 'firstName lastName email role avatar'
+        }
+      });
 
     if (!don) {
       return res.status(404).json({ status: false, message: 'Don introuvable' });
@@ -125,6 +137,34 @@ async function confirmDon(req, res) {
   }
 }
 
+async function changeDonStatus(req, res) {
+  try {
+    const { statut } = req.body;
+    const allowed = ['EN_ATTENTE', 'CONFIRME', 'REFUSE'];
+
+    if (!allowed.includes(statut)) {
+      return res.status(400).json({ status: false, message: 'Statut invalide' });
+    }
+
+    const don = await donModel.findById(req.params.id);
+    if (!don) {
+      return res.status(404).json({ status: false, message: 'Don introuvable' });
+    }
+
+    don.statut = statut;
+    await don.save();
+
+    await saveLog({
+      action: `${req.user.firstName} a changé le statut d'un don à ${statut}`,
+      actorId: req.user._id,
+    });
+
+    res.status(200).json({ status: true, message: 'Statut mis à jour', don });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+}
+
 async function deleteDon(req, res) {
   try {
     const don = await donModel.findById(req.params.id);
@@ -149,5 +189,6 @@ module.exports = {
   getDon,
   updateDon,
   confirmDon,
+  changeDonStatus,
   deleteDon
 };

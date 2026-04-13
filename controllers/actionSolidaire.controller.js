@@ -1,4 +1,5 @@
 const actionSolidaireModel = require('../models/actionSolidaire.model');
+const affectationModel = require('../models/affectation.model');
 const { createActionSolidaireSchema, updateActionSolidaireSchema } = require('../schemas/actionSolidaire.schema');
 const { saveLog } = require('../utils/logger');
 
@@ -119,6 +120,13 @@ async function deleteActionSolidaire(req, res) {
 
 async function participerAction(req, res) {
   try {
+    if (req.user.role !== 'BENEVOLE') {
+      return res.status(403).json({
+        status: false,
+        message: 'Seuls les bénévoles peuvent participer à une action solidaire'
+      });
+    }
+
     const action = await actionSolidaireModel.findById(req.params.id);
 
     if (!action) {
@@ -134,10 +142,29 @@ async function participerAction(req, res) {
       await action.save();
     }
 
+    let affectation = await affectationModel.findOne({
+      benevole: req.user._id,
+      action: action._id
+    });
+
+    if (!affectation) {
+      affectation = await affectationModel.create({
+        benevole: req.user._id,
+        action: action._id,
+        statut: 'EN_ATTENTE'
+      });
+    }
+
+    await saveLog({
+      action: `${req.user.firstName} a rejoint une action solidaire`,
+      actorId: req.user._id
+    });
+
     res.status(200).json({
       status: true,
       message: 'Participation enregistrée avec succès',
-      action
+      action,
+      affectation
     });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });

@@ -1,6 +1,7 @@
 const demandeModel = require('../models/demande.model');
 const { createDemandeSchema, updateDemandeSchema } = require('../schemas/demande.schema');
 const { saveLog } = require('../utils/logger');
+const { notifyUser } = require('../utils/notify');
 
 async function createDemande(req, res) {
   try {
@@ -33,6 +34,10 @@ async function createDemande(req, res) {
 async function listDemandes(req, res) {
   try {
     const filter = {};
+
+    if (req.user.role === 'FEMME MALADE') {
+      filter.femme = req.user._id;
+    }
 
     if (req.query.femme) {
       filter.femme = req.query.femme;
@@ -154,6 +159,16 @@ async function changeDemandeStatus(req, res) {
       action: `${req.user.firstName} a changé le statut d'une demande à ${statut}`,
       actorId: req.user._id
     });
+
+    const statusMessages = {
+      VALIDEE: 'Votre demande d\'aide a été validée.',
+      REFUSEE: 'Votre demande d\'aide a été refusée.',
+      EN_COURS: 'Votre demande d\'aide est en cours de traitement.',
+      TERMINEE: 'Votre demande d\'aide a été clôturée.'
+    };
+    if (statusMessages[statut]) {
+      await notifyUser(demande.femme, statusMessages[statut]);
+    }
 
     res.status(200).json({
       status: true,

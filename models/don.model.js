@@ -16,7 +16,7 @@ const donSchema = new mongoose.Schema({
   },
   statut: {
     type: String,
-    enum: ['EN_ATTENTE', 'CONFIRME'],
+    enum: ['EN_ATTENTE', 'CONFIRME', 'REFUSE'],
     default: 'EN_ATTENTE'
   },
   donateur: {
