@@ -6,6 +6,7 @@ const {
   getDon,
   updateDon,
   confirmDon,
+  changeDonStatus,
   deleteDon
 } = require('../controllers/don.controller');
 
@@ -16,6 +17,7 @@ router.get('/', protect, listDons);
 router.get('/:id', protect, getDon);
 router.put('/:id', protect, updateDon);
 router.put('/:id/confirm', protect, confirmDon);
+router.put('/:id/statut', protect, changeDonStatus);
 router.delete('/:id', protect, deleteDon);
 
 module.exports = router;

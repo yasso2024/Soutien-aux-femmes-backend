@@ -1,6 +1,7 @@
 const demandeModel = require('../models/demande.model');
 const { createDemandeSchema, updateDemandeSchema } = require('../schemas/demande.schema');
 const { saveLog } = require('../utils/logger');
+const { notifyUser } = require('../utils/notify');
 
 async function createDemande(req, res) {
   try {
@@ -32,11 +33,26 @@ async function createDemande(req, res) {
 
 async function listDemandes(req, res) {
   try {
+    const filter = {};
+
+    if (req.user.role === 'FEMME MALADE') {
+      filter.femme = req.user._id;
+    }
+
+    if (req.query.femme) {
+      filter.femme = req.query.femme;
+    }
+
+    if (req.query.statut) {
+      filter.statut = req.query.statut;
+    }
+
     const demandes = await demandeModel
-      .find()
+      .find(filter)
       .populate('femme', 'firstName lastName email role')
       .populate('validePar', 'firstName lastName email role')
-   
+      .populate('don')
+      .sort({ createdAt: -1 });
 
     res.status(200).json({ status: true, demandes });
   } catch (error) {
@@ -50,7 +66,7 @@ async function getDemande(req, res) {
       .findById(req.params.id)
       .populate('femme', 'firstName lastName email role')
       .populate('validePar', 'firstName lastName email role')
-    
+      .populate('don');
 
     if (!demande) {
       return res.status(404).json({ status: false, message: 'Demande introuvable' });
@@ -143,6 +159,16 @@ async function changeDemandeStatus(req, res) {
       action: `${req.user.firstName} a changé le statut d'une demande à ${statut}`,
       actorId: req.user._id
     });
+
+    const statusMessages = {
+      VALIDEE: 'Votre demande d\'aide a été validée.',
+      REFUSEE: 'Votre demande d\'aide a été refusée.',
+      EN_COURS: 'Votre demande d\'aide est en cours de traitement.',
+      TERMINEE: 'Votre demande d\'aide a été clôturée.'
+    };
+    if (statusMessages[statut]) {
+      await notifyUser(demande.femme, statusMessages[statut]);
+    }
 
     res.status(200).json({
       status: true,

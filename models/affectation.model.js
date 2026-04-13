@@ -1,0 +1,30 @@
+const mongoose = require('mongoose');
+
+const affectationSchema = new mongoose.Schema({
+  dateAffectation: {
+    type: Date,
+    default: Date.now
+  },
+  statut: {
+    type: String,
+    enum: ['EN_ATTENTE', 'ACCEPTEE', 'REFUSEE', 'TERMINEE'],
+    default: 'EN_ATTENTE'
+  },
+  benevole: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'users',
+    required: true
+  },
+  action: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'actionsSolidaires',
+    required: true
+  },
+  demande: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'demandes'
+  }
+}, { timestamps: true });
+
+const affectationModel = mongoose.model('affectations', affectationSchema);
+module.exports = affectationModel;
