@@ -52,14 +52,28 @@ async function listPropositionsAide(req, res) {
     }
 
     if (req.user.role === 'FEMME MALADE') {
+      // Les femmes voient :
+      // 1. Les propositions liées à leurs demandes
+      // 2. Les propositions générales (sans demande spécifique)
       const demandes = await demandeModel.find({ femme: req.user._id }).select('_id');
-      filter.demande = { $in: demandes.map((demande) => demande._id) };
+      const demandeIds = demandes.map((demande) => demande._id);
+      
+      filter.$or = [
+        { demande: { $in: demandeIds } }, // Propositions liées à leurs demandes
+        { demande: { $exists: false } }   // Propositions générales
+      ];
     }
 
     if (req.query.demande) {
       if (req.user.role === 'FEMME MALADE') {
+        // Vérifier que la demande appartient bien à la femme
         const demandes = await demandeModel.find({ femme: req.user._id, _id: req.query.demande }).select('_id');
-        filter.demande = { $in: demandes.map((demande) => demande._id) };
+        if (demandes.length > 0) {
+          filter.demande = req.query.demande;
+        } else {
+          // Si la demande n'appartient pas à la femme, ne rien retourner
+          return res.status(200).json({ status: true, propositions: [] });
+        }
       } else {
         filter.demande = req.query.demande;
       }
@@ -98,10 +112,17 @@ async function getPropositionAide(req, res) {
     }
 
     if (req.user.role === 'FEMME MALADE') {
-      const femmeId = proposition?.demande?.femme?._id?.toString();
-      if (femmeId !== req.user._id.toString()) {
-        return res.status(403).json({ status: false, message: 'Accès non autorisé à cette proposition' });
+      // Les femmes peuvent voir :
+      // 1. Les propositions liées à leurs demandes
+      // 2. Les propositions générales (sans demande spécifique)
+      const hasDemande = proposition.demande;
+      if (hasDemande) {
+        const femmeId = proposition?.demande?.femme?._id?.toString();
+        if (femmeId !== req.user._id.toString()) {
+          return res.status(403).json({ status: false, message: 'Accès non autorisé à cette proposition' });
+        }
       }
+      // Pour les propositions générales, pas de vérification supplémentaire
     }
 
     res.status(200).json({ status: true, proposition });
@@ -181,11 +202,14 @@ async function changePropositionStatus(req, res) {
     }
 
     if (req.user.role === 'FEMME MALADE') {
-      const femmeId = proposition?.demande?.femme?.toString();
-
-      if (femmeId !== req.user._id.toString()) {
-        return res.status(403).json({ status: false, message: 'Accès non autorisé à cette proposition' });
+      // Pour les propositions liées à une demande, vérifier que la demande appartient à la femme
+      if (proposition.demande) {
+        const femmeId = proposition?.demande?.femme?.toString();
+        if (femmeId !== req.user._id.toString()) {
+          return res.status(403).json({ status: false, message: 'Accès non autorisé à cette proposition' });
+        }
       }
+      // Pour les propositions générales, pas de vérification supplémentaire
 
       if (!['ACCEPTEE', 'REFUSEE'].includes(statut)) {
         return res.status(400).json({ status: false, message: 'La femme peut seulement accepter ou refuser la proposition' });
