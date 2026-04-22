@@ -2,7 +2,7 @@ const propositionAideModel = require('../models/propositionAide.model');
 const demandeModel = require('../models/demande.model');
 const { createPropositionAideSchema, updatePropositionAideSchema } = require('../schemas/propositionAide.schema');
 const { saveLog } = require('../utils/logger');
-const { notifyUser } = require('../utils/notify');
+const { notifyUser, notifyRole } = require('../utils/notify');
 
 async function createPropositionAide(req, res) {
   try {
@@ -12,10 +12,16 @@ async function createPropositionAide(req, res) {
       return res.status(400).json({ errors: validation.error.flatten() });
     }
 
-    const proposition = await propositionAideModel.create({
-      ...req.body,
+    const payload = {
+      description: req.body.description,
       association: req.user._id
-    });
+    };
+
+    if (req.body.demande) {
+      payload.demande = req.body.demande;
+    }
+
+    const proposition = await propositionAideModel.create(payload);
 
     await saveLog({
       action: `${req.user.firstName} a proposé une aide`,
@@ -28,10 +34,27 @@ async function createPropositionAide(req, res) {
       if (demande?.femme) {
         await notifyUser(
           demande.femme,
-          `Une association a proposé une aide pour votre demande.`
+          `Une association a proposé une aide pour votre demande.`,
+          'proposition_aide',
+          '/mes-propositions'
         );
       }
     }
+    // Notify admins
+    await notifyRole(
+      'ADMINISTRATEUR',
+      `${req.user.firstName} (association) a soumis une proposition d'aide.`,
+      'activite_importante',
+      '/propositions'
+    );
+
+    // Confirm to the association itself
+    await notifyUser(
+      req.user._id,
+      `Votre proposition d'aide a été soumise avec succès et est en attente de validation.`,
+      'proposition_aide',
+      '/association/propositions-aide'
+    );
 
     res.status(201).json({
       status: true,
@@ -223,6 +246,28 @@ async function changePropositionStatus(req, res) {
       action: `${req.user.firstName} a changé le statut d'une proposition à ${statut}`,
       actorId: req.user._id
     });
+
+    // Notify association of femme's decision
+    if (['ACCEPTEE', 'REFUSEE'].includes(statut) && proposition.association) {
+      const isAccepted = statut === 'ACCEPTEE';
+      await notifyUser(
+        proposition.association,
+        isAccepted
+          ? 'Votre proposition d\'aide a été acceptée par la bénéficiaire.'
+          : 'Votre proposition d\'aide a été refusée par la bénéficiaire.',
+        isAccepted ? 'proposition_acceptee' : 'proposition_rejetee',
+        '/mes-propositions'
+      );
+    }
+    // If accepted, also confirm accompaniment to the femme malade
+    if (statut === 'ACCEPTEE' && proposition.demande?.femme) {
+      await notifyUser(
+        proposition.demande.femme,
+        'Un accompagnement a été confirmé suite à votre demande d\'aide.',
+        'affectation_confirmee',
+        '/mes-demandes'
+      );
+    }
 
     res.status(200).json({ status: true, message: 'Statut mis à jour', proposition });
   } catch (error) {

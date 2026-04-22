@@ -13,7 +13,7 @@ const signUpSchema = z.object({
     dob: z.string().optional(),
     telephone: z.string().min(1, { message: "Telephone is required" }),
   region: z.string().min(1, { message: "Region is required" }),
-  role: z.enum([  "USER","FEMME MALADE","ADMINISTRATEUR", "BENEVOLE", "DONTEUR","ASSOCIATION",
+  role: z.enum([  "USER","FEMME MALADE","ADMINISTRATEUR", "BENEVOLE", "DONTEUR", "DONATEUR", "ASSOCIATION",
   ]),
 });
 

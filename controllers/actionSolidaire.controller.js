@@ -2,6 +2,7 @@ const actionSolidaireModel = require('../models/actionSolidaire.model');
 const affectationModel = require('../models/affectation.model');
 const { createActionSolidaireSchema, updateActionSolidaireSchema } = require('../schemas/actionSolidaire.schema');
 const { saveLog } = require('../utils/logger');
+const { notifyUser, notifyRole } = require('../utils/notify');
 
 async function createActionSolidaire(req, res) {
   try {
@@ -20,6 +21,29 @@ async function createActionSolidaire(req, res) {
       action: `${req.user.firstName} a créé une action solidaire`,
       actorId: req.user._id
     });
+
+    // Notify all bénévoles of the new action
+    await notifyRole(
+      'BENEVOLE',
+      `Une nouvelle action solidaire est disponible : "${action.titre || 'voir détails'}". Rejoignez-nous !`,
+      'nouvelle_action',
+      '/actions-solidaires'
+    );
+    // Alert admins
+    await notifyRole(
+      'ADMINISTRATEUR',
+      `Nouvelle action solidaire créée par ${req.user.firstName} ${req.user.lastName}.`,
+      'action_a_valider',
+      '/actions-solidaires'
+    );
+
+    // Confirm to the association itself
+    await notifyUser(
+      req.user._id,
+      `Votre action solidaire "${action.titre || 'nouvelle action'}" a été créée avec succès.`,
+      'nouvelle_action',
+      '/association/actions-solidaires'
+    );
 
     res.status(201).json({
       status: true,
@@ -160,6 +184,16 @@ async function participerAction(req, res) {
       actorId: req.user._id
     });
 
+    // Notify the association that a volunteer joined their action
+    if (action.association) {
+      await notifyUser(
+        action.association,
+        `${req.user.firstName} ${req.user.lastName} s'est inscrit(e) à votre action solidaire.`,
+        'benevole_inscrit',
+        '/mes-actions'
+      );
+    }
+
     res.status(200).json({
       status: true,
       message: 'Participation enregistrée avec succès',
@@ -171,11 +205,64 @@ async function participerAction(req, res) {
   }
 }
 
+async function changeActionStatus(req, res) {
+  try {
+    if (req.user.role !== 'ADMINISTRATEUR') {
+      return res.status(403).json({ status: false, message: 'Accès refusé' });
+    }
+
+    const { statut } = req.body;
+    const allowed = ['EN_ATTENTE', 'VALIDEE', 'REFUSEE', 'TERMINEE'];
+    if (!allowed.includes(statut)) {
+      return res.status(400).json({ status: false, message: 'Statut invalide' });
+    }
+
+    const action = await actionSolidaireModel.findById(req.params.id)
+      .populate('association', '_id firstName lastName oneSignalPlayerId');
+
+    if (!action) {
+      return res.status(404).json({ status: false, message: 'Action introuvable' });
+    }
+
+    action.statut = statut;
+    await action.save();
+
+    await saveLog({
+      action: `${req.user.firstName} a changé le statut de l'action "${action.titre}" à ${statut}`,
+      actorId: req.user._id
+    });
+
+    // Notify the association
+    if (action.association?._id) {
+      if (statut === 'VALIDEE') {
+        await notifyUser(
+          action.association._id,
+          `Votre action solidaire "${action.titre}" a été validée par l'administrateur.`,
+          'proposition_acceptee',
+          '/association/actions-solidaires'
+        );
+      } else if (statut === 'REFUSEE') {
+        await notifyUser(
+          action.association._id,
+          `Votre action solidaire "${action.titre}" a été refusée par l'administrateur.`,
+          'proposition_rejetee',
+          '/association/actions-solidaires'
+        );
+      }
+    }
+
+    res.status(200).json({ status: true, message: 'Statut mis à jour', action });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+}
+
 module.exports = {
   createActionSolidaire,
   listActionsSolidaires,
   getActionSolidaire,
   updateActionSolidaire,
   deleteActionSolidaire,
-  participerAction
+  participerAction,
+  changeActionStatus,
 };

@@ -14,7 +14,7 @@ const createUserSchema = z.object({
         .min(8, { message: "Password must be greater than 8 chars" })
         .max(32, { message: "Password must be less than 32 chars" }),
     dob: z.string().optional(),
-role:z.enum( ["USER", "VISITEUR","FEMME MALADE", "ADMINISTRATEUR","BENEVOLE","DONTEUR","ASSOCIATION"]).optional(),
+role:z.enum( ["USER", "VISITEUR","FEMME MALADE", "ADMINISTRATEUR","BENEVOLE","DONTEUR","DONATEUR","ASSOCIATION"]).optional(),
     avatar: z.string().optional().nullable()
 });
 
@@ -23,7 +23,7 @@ const updateUserSchema = z.object({
     firstName: z.string().min(1, { message: "First Name is required" }),
     lastName: z.string().min(1, { message: "Last Name is required" }),
     dob: z.string().optional(),
-   role:z.enum( ["USER", "VISITEUR","FEMME MALADE", "ADMINISTRATEUR","BENEVOLE","DONTEUR","ASSOCIATION"]).optional(),
+   role:z.enum( ["USER", "VISITEUR","FEMME MALADE", "ADMINISTRATEUR","BENEVOLE","DONTEUR","DONATEUR","ASSOCIATION"]).optional(),
     avatar: z.string().optional().nullable()
 });
 

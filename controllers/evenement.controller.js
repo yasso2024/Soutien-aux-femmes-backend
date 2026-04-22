@@ -2,6 +2,7 @@ const Evenement = require("../models/evenement.model");
 
 const getAllEvenements = async (req, res) => {
   try {
+    console.log('[EVENEMENT] /getAllEvenements endpoint called');
     const { search } = req.query;
     let filter = {};
 
@@ -19,6 +20,7 @@ const getAllEvenements = async (req, res) => {
     const evenements = await Evenement.find(filter).sort({ dateDebut: 1 });
     return res.status(200).json(evenements);
   } catch (error) {
+    console.error('[EVENEMENT /getAllEvenements ERROR]', error.message, error.stack);
     return res.status(500).json({
       message: "Erreur lors de la récupération des évènements",
       error: error.message,

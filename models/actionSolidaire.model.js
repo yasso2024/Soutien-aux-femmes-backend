@@ -15,6 +15,11 @@ const actionSolidaireSchema = new mongoose.Schema({
     type: Date,
     required: true
   },
+  statut: {
+    type: String,
+    enum: ['EN_ATTENTE', 'VALIDEE', 'REFUSEE', 'TERMINEE'],
+    default: 'EN_ATTENTE'
+  },
   association: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'users',

@@ -7,7 +7,7 @@ const affectationSchema = new mongoose.Schema({
   },
   statut: {
     type: String,
-    enum: ['EN_ATTENTE', 'ACCEPTEE', 'REFUSEE', 'TERMINEE'],
+    enum: ['EN_ATTENTE', 'ACCEPTEE', 'TERMINEE'],
     default: 'EN_ATTENTE'
   },
   benevole: {
@@ -23,6 +23,10 @@ const affectationSchema = new mongoose.Schema({
   demande: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'demandes'
+  },
+  femme: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'users'
   }
 }, { timestamps: true });
 

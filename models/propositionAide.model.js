@@ -18,7 +18,7 @@ const propositionAideSchema = new mongoose.Schema({
   demande: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'demandes',
-    required: false // Rendre optionnel
+    required: false
   },
   association: {
     type: mongoose.Schema.Types.ObjectId,

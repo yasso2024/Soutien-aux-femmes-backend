@@ -49,6 +49,7 @@ const userSchema = new mongoose.Schema(
         "ADMINISTRATEUR",
         "BENEVOLE",
         "DONTEUR",
+        "DONATEUR",
         "ASSOCIATION",
       ],
       default: "USER",

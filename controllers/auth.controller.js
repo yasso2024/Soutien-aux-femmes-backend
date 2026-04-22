@@ -2,6 +2,7 @@ const userModel = require('../models/user.model');
 const sendEmail = require('../utils/mailer');
 const { signUpSchema, loginSchema,changePasswordSchema } = require("../schemas/auth.schema");
 const { generateToken } = require('../utils/jwt');
+const { notifyRole } = require('../utils/notify');
 
 async function signUp(req, res) {
     try {
@@ -49,6 +50,17 @@ async function signUp(req, res) {
         }
 
         await sendEmail(options);
+
+        // Notify admins of the new registration
+        const isAssociation = role === 'ASSOCIATION';
+        await notifyRole(
+          'ADMINISTRATEUR',
+          isAssociation
+            ? `Nouvelle association inscrite : ${firstName} ${lastName}.`
+            : `Nouvel utilisateur inscrit : ${firstName} ${lastName} (${role || 'USER'}).`,
+          isAssociation ? 'new_association' : 'new_user',
+          '/users'
+        );
 
         res.status(201).json({
             status: true,
@@ -109,12 +121,14 @@ async function login(req, res) {
 }
 async function getMe(req, res) {
     try {
+        console.log('[AUTH] /me endpoint called, user:', req.user?._id);
         res.status(200).json({
             status: true,
             user: req.user
         });
 
     } catch (error) {
+        console.error('[AUTH /me ERROR]', error.message, error.stack);
         res.status(500).json({
             message: error.message || "Internal server error"
         });

@@ -2,7 +2,10 @@ const { z } = require('zod');
 
 const createPropositionAideSchema = z.object({
   description: z.string().min(1, 'Description obligatoire'),
-  demande: z.string().optional() // Rendre optionnel
+  demande: z.preprocess(
+    (value) => (value === '' || value === null ? undefined : value),
+    z.string().min(1, 'La demande est obligatoire').optional()
+  )
 });
 
 const updatePropositionAideSchema = z.object({
