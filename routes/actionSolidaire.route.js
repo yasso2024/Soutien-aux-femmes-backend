@@ -7,6 +7,7 @@ const {
   updateActionSolidaire,
   deleteActionSolidaire,
   participerAction,
+  quitterAction,
   changeActionStatus,
 } = require('../controllers/actionSolidaire.controller');
 
@@ -17,6 +18,7 @@ router.get('/', protect, listActionsSolidaires);
 router.get('/:id', protect, getActionSolidaire);
 router.put('/:id/statut', protect, changeActionStatus);
 router.put('/:id/participer', protect, participerAction);
+router.put('/:id/quitter', protect, quitterAction);
 router.put('/:id', protect, updateActionSolidaire);
 router.delete('/:id', protect, deleteActionSolidaire);
 

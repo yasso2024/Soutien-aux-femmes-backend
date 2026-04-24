@@ -175,7 +175,7 @@ async function confirmerParticipation(req, res) {
 async function changeAffectationStatus(req, res) {
   try {
     const { statut } = req.body;
-    const allowed = ['EN_ATTENTE', 'ACCEPTEE', 'TERMINEE'];
+    const allowed = ['EN_ATTENTE', 'ACCEPTEE', 'REFUSEE', 'TERMINEE'];
 
     if (!allowed.includes(statut)) {
       return res.status(400).json({ status: false, message: 'Statut invalide' });

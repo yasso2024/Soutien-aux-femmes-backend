@@ -7,7 +7,7 @@ const affectationSchema = new mongoose.Schema({
   },
   statut: {
     type: String,
-    enum: ['EN_ATTENTE', 'ACCEPTEE', 'TERMINEE'],
+    enum: ['EN_ATTENTE', 'ACCEPTEE', 'REFUSEE', 'TERMINEE'],
     default: 'EN_ATTENTE'
   },
   benevole: {

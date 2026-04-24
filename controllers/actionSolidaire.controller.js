@@ -257,6 +257,39 @@ async function changeActionStatus(req, res) {
   }
 }
 
+async function quitterAction(req, res) {
+  try {
+    if (req.user.role !== 'BENEVOLE') {
+      return res.status(403).json({ status: false, message: 'Accès refusé' });
+    }
+
+    const action = await actionSolidaireModel.findByIdAndUpdate(
+      req.params.id,
+      { $pull: { benevoles: req.user._id } },
+      { new: true }
+    ).populate('association', 'firstName lastName email nomOrganisation adresse role')
+     .populate('benevoles', 'firstName lastName email role competences');
+
+    if (!action) {
+      return res.status(404).json({ status: false, message: 'Action introuvable' });
+    }
+
+    await affectationModel.findOneAndDelete({
+      benevole: req.user._id,
+      action: action._id,
+    });
+
+    await saveLog({
+      action: `${req.user.firstName} a quitté une action solidaire`,
+      actorId: req.user._id,
+    });
+
+    res.status(200).json({ status: true, message: 'Désinscription effectuée', action });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+}
+
 module.exports = {
   createActionSolidaire,
   listActionsSolidaires,
@@ -264,5 +297,6 @@ module.exports = {
   updateActionSolidaire,
   deleteActionSolidaire,
   participerAction,
+  quitterAction,
   changeActionStatus,
 };

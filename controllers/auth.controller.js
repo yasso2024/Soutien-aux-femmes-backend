@@ -3,6 +3,7 @@ const sendEmail = require('../utils/mailer');
 const { signUpSchema, loginSchema,changePasswordSchema } = require("../schemas/auth.schema");
 const { generateToken } = require('../utils/jwt');
 const { notifyRole } = require('../utils/notify');
+const crypto = require('crypto');
 
 async function signUp(req, res) {
     try {
@@ -138,7 +139,9 @@ async function changePassword(req,res) {
     try {
         const validation = changePasswordSchema.safeParse(req.body);
         if(! validation.success){
-            return res. status (400).json({
+            return res.status(400).json({
+                status: false,
+                message: "Validation failed",
                 errors: validation.error.flatten()
         });
     }
@@ -169,4 +172,77 @@ async function changePassword(req,res) {
         });
     }
 }
-module.exports = { signUp, login ,getMe,changePassword};
+module.exports = { signUp, login ,getMe,changePassword, forgotPassword, resetPassword};
+
+async function forgotPassword(req, res) {
+    try {
+        const { email } = req.body;
+        if (!email) {
+            return res.status(400).json({ status: false, message: 'Email is required' });
+        }
+
+        const user = await userModel.findOne({ email });
+        if (!user) {
+            // Return success even if user not found to avoid email enumeration
+            return res.status(200).json({ status: true, message: 'If that email is registered, a reset link has been sent.' });
+        }
+
+        // Generate a random token
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+        await userModel.updateOne(
+            { _id: user._id },
+            { $set: { resetPasswordToken: hashedToken, resetPasswordExpire: new Date(Date.now() + 15 * 60 * 1000) } }
+        );
+
+        const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password/${rawToken}`;
+
+        await sendEmail({
+            email: user.email,
+            subject: 'Réinitialisation de mot de passe',
+            content: `Bonjour ${user.firstName},\n\nCliquez sur ce lien pour réinitialiser votre mot de passe (valable 15 minutes) :\n${resetUrl}\n\nSi vous n'avez pas fait cette demande, ignorez cet email.`
+        });
+
+        res.status(200).json({ status: true, message: 'Un email de réinitialisation a été envoyé.' });
+    } catch (error) {
+        res.status(500).json({ status: false, message: error.message });
+    }
+}
+
+async function resetPassword(req, res) {
+    try {
+        const { token } = req.params;
+        const { newPassword, confirmNewPassword } = req.body;
+
+        if (!newPassword || !confirmNewPassword) {
+            return res.status(400).json({ status: false, message: 'New password and confirmation are required' });
+        }
+
+        const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+        console.log('[RESET PWD] hashedToken:', hashedToken);
+        console.log('[RESET PWD] now:', new Date());
+
+        const dbUser = await userModel.findOne({ resetPasswordToken: hashedToken }).select('+resetPasswordToken +resetPasswordExpire');
+        console.log('[RESET PWD] user found by token:', dbUser ? `id=${dbUser._id} expire=${dbUser.resetPasswordExpire}` : 'NOT FOUND');
+
+        const user = await userModel.findOne({
+            resetPasswordToken: hashedToken,
+            resetPasswordExpire: { $gt: new Date() }
+        }).select('+password +resetPasswordToken +resetPasswordExpire');
+
+        if (!user) {
+            return res.status(400).json({ status: false, message: 'Token invalide ou expiré.' });
+        }
+
+        user.password = newPassword;
+        user.confirmPassword = confirmNewPassword;
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpire = undefined;
+        await user.save();
+
+        res.status(200).json({ status: true, message: 'Mot de passe réinitialisé avec succès.' });
+    } catch (error) {
+        res.status(500).json({ status: false, message: error.message });
+    }
+}
