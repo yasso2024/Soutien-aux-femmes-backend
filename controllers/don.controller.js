@@ -55,7 +55,10 @@ async function listDons(req, res) {
   try {
     const filter = {};
 
-    if (req.query.donateur) {
+    if (req.user.role === 'DONATEUR' || req.user.role === 'DONTEUR') {
+      // Donateur sees only their own donations — query param cannot override this
+      filter.donateur = req.user._id;
+    } else if (req.query.donateur) {
       filter.donateur = req.query.donateur;
     }
 
@@ -94,6 +97,13 @@ async function getDon(req, res) {
 
     if (!don) {
       return res.status(404).json({ status: false, message: 'Don introuvable' });
+    }
+
+    if (req.user.role === 'DONATEUR' || req.user.role === 'DONTEUR') {
+      const ownerId = don.donateur?._id?.toString() || don.donateur?.toString();
+      if (ownerId !== req.user._id.toString()) {
+        return res.status(403).json({ status: false, message: 'Accès non autorisé à ce don' });
+      }
     }
 
     res.status(200).json({ status: true, don });
@@ -157,6 +167,15 @@ async function confirmDon(req, res) {
     don.statut = 'CONFIRME';
     await don.save();
 
+    // When the don is confirmed, automatically validate the linked demande
+    if (don.demande) {
+      await demandeModel.findByIdAndUpdate(
+        don.demande,
+        { statut: 'VALIDEE', validePar: don.donateur },
+        { new: true }
+      );
+    }
+
     // Notify the donor their donation was confirmed
     await notifyUser(
       don.donateur,
@@ -191,6 +210,20 @@ async function changeDonStatus(req, res) {
 
     don.statut = statut;
     await don.save();
+
+    // When confirmed, automatically validate the linked demande
+    if (statut === 'CONFIRME' && don.demande) {
+      await demandeModel.findByIdAndUpdate(
+        don.demande,
+        { statut: 'VALIDEE', validePar: req.user._id },
+        { new: true }
+      );
+    }
+
+    // When refused, free the linked demande so another donor can finance it
+    if (statut === 'REFUSE' && don.demande) {
+      await demandeModel.findByIdAndUpdate(don.demande, { $unset: { don: 1 } });
+    }
 
     await saveLog({
       action: `${req.user.firstName} a changé le statut d'un don à ${statut}`,
@@ -242,21 +275,23 @@ async function getDonatorStats(req, res) {
       populate: { path: 'femme', select: '_id' },
     });
 
-    const totalMontant = dons.reduce((sum, d) => sum + (Number(d.montant) || 0), 0);
+    // Exclude REFUSE dons from all stats – a refused don is not a confirmed contribution
+    const activeDons = dons.filter((d) => d.statut !== 'REFUSE');
+    const totalMontant = activeDons.reduce((sum, d) => sum + (Number(d.montant) || 0), 0);
 
-    // Forward reference: femmes linked via don.demande (all statuts, not just CONFIRME)
-    const femmeIdsForward = dons
+    // Forward reference: femmes linked via confirmed/pending dons only
+    const femmeIdsForward = activeDons
       .filter((d) => d.demande?.femme)
       .map((d) => (d.demande?.femme?._id || d.demande?.femme || '').toString())
       .filter(Boolean);
 
-    // Forward reference: directly financed demande IDs
-    const demandeIdsForward = dons
+    // Forward reference: directly financed demande IDs (non-refused)
+    const demandeIdsForward = activeDons
       .map((d) => (d.demande?._id || d.demande || '').toString())
       .filter(Boolean);
 
-    // Reverse reference: demandes that have `don` pointing to one of this donateur's dons
-    const donIds = dons.map((d) => d._id);
+    // Reverse reference: demandes that have `don` pointing to one of this donateur's active dons
+    const donIds = activeDons.map((d) => d._id);
     const demandesByBackref = donIds.length
       ? await demandeModel.find({ don: { $in: donIds } }).select('_id femme')
       : [];
@@ -287,9 +322,9 @@ async function getDonatorStats(req, res) {
     res.status(200).json({
       status: true,
       stats: {
-        totalDons: dons.length,
+        totalDons: activeDons.length,
         totalMontant,
-        donsConfirmes: dons.filter((d) => d.statut === 'CONFIRME').length,
+        donsConfirmes: activeDons.filter((d) => d.statut === 'CONFIRME').length,
         demandesFinancees: allDirectDemandeIds.length,
         femmesAidees,
         propositionsLiees,
@@ -309,13 +344,16 @@ async function getDonatorPropositions(req, res) {
       select: '_id femme',
     });
 
+    // Only non-refused dons count — refused dons have no business effect
+    const activeDons = dons.filter((d) => d.statut !== 'REFUSE');
+
     // Femme IDs via forward reference (don.demande.femme)
-    const femmeIdsForward = dons
+    const femmeIdsForward = activeDons
       .filter((d) => d.demande?.femme)
       .map((d) => (d.demande.femme._id || d.demande.femme).toString());
 
-    // Reverse reference: demandes whose `don` field points to this donateur's dons
-    const donIds = dons.map((d) => d._id);
+    // Reverse reference: demandes whose `don` field points to this donateur's active dons
+    const donIds = activeDons.map((d) => d._id);
     const demandesByBackref = donIds.length
       ? await demandeModel.find({ don: { $in: donIds } }).select('_id femme')
       : [];

@@ -1,5 +1,7 @@
 const propositionAideModel = require('../models/propositionAide.model');
 const demandeModel = require('../models/demande.model');
+const userModel = require('../models/user.model');
+const sendEmail = require('../utils/mailer');
 const { createPropositionAideSchema, updatePropositionAideSchema } = require('../schemas/propositionAide.schema');
 const { saveLog } = require('../utils/logger');
 const { notifyUser, notifyRole } = require('../utils/notify');
@@ -14,11 +16,20 @@ async function createPropositionAide(req, res) {
 
     const payload = {
       description: req.body.description,
-      association: req.user._id
+      association: req.user._id,
+      ...(req.body.titre ? { titre: req.body.titre } : {}),
+      ...(req.body.typeAide ? { typeAide: req.body.typeAide } : {}),
     };
 
     if (req.body.demande) {
       payload.demande = req.body.demande;
+      // Auto-populate femme from demande
+      const demande = await demandeModel.findById(req.body.demande).select('femme');
+      if (demande?.femme) {
+        payload.femme = demande.femme;
+      }
+    } else if (req.body.femme) {
+      payload.femme = req.body.femme;
     }
 
     const proposition = await propositionAideModel.create(payload);
@@ -27,6 +38,16 @@ async function createPropositionAide(req, res) {
       action: `${req.user.firstName} a proposé une aide`,
       actorId: req.user._id
     });
+
+    // Pour les propositions générales (sans demande ni femme ciblée), notifier toutes les FEMME MALADE
+    if (!req.body.demande && !req.body.femme) {
+      await notifyRole(
+        'FEMME MALADE',
+        `Nouvelle proposition d'aide disponible${req.body.titre ? ` : ${req.body.titre}` : ''}.`,
+        'proposition_aide',
+        '/mes-propositions'
+      );
+    }
 
     // Notify the femme malade who owns the demande
     if (req.body.demande) {
@@ -75,40 +96,48 @@ async function listPropositionsAide(req, res) {
     }
 
     if (req.user.role === 'FEMME MALADE') {
-      // Les femmes voient :
-      // 1. Les propositions liées à leurs demandes
-      // 2. Les propositions générales (sans demande spécifique)
-      const demandes = await demandeModel.find({ femme: req.user._id }).select('_id');
-      const demandeIds = demandes.map((demande) => demande._id);
-      
-      filter.$or = [
-        { demande: { $in: demandeIds } }, // Propositions liées à leurs demandes
-        { demande: { $exists: false } }   // Propositions générales
-      ];
-    }
+      // Récupérer les IDs de toutes les demandes de cette femme
+      const mesDemandes = await demandeModel.find({ femme: req.user._id }).select('_id');
+      const mesDemandeIds = mesDemandes.map((d) => d._id);
 
-    if (req.query.demande) {
-      if (req.user.role === 'FEMME MALADE') {
-        // Vérifier que la demande appartient bien à la femme
-        const demandes = await demandeModel.find({ femme: req.user._id, _id: req.query.demande }).select('_id');
-        if (demandes.length > 0) {
-          filter.demande = req.query.demande;
-        } else {
-          // Si la demande n'appartient pas à la femme, ne rien retourner
+      if (req.query.demande) {
+        // Seules ses propres demandes sont accessibles
+        const appartient = mesDemandeIds.some((id) => id.toString() === req.query.demande);
+        if (!appartient) {
           return res.status(200).json({ status: true, propositions: [] });
         }
-      } else {
         filter.demande = req.query.demande;
+      } else {
+        // Propositions liées à ses demandes + propositions générales disponibles ou acceptées par elle
+        const orClauses = [];
+        if (mesDemandeIds.length > 0) {
+          orClauses.push({ demande: { $in: mesDemandeIds } });
+        }
+        // Propositions générales disponibles (pas encore acceptées, pas refusées par elle)
+        orClauses.push({
+          demande: null,
+          femme: null,
+          statut: 'PROPOSEE',
+          accepted_by_femme: null,
+          refused_by: { $nin: [req.user._id] }
+        });
+        // Propositions générales qu'elle a acceptées
+        orClauses.push({ demande: null, femme: null, accepted_by_femme: req.user._id });
+        filter.$or = orClauses;
       }
+    } else if (req.query.demande) {
+      filter.demande = req.query.demande;
     }
 
     const propositions = await propositionAideModel.find(filter)
-      .populate('association', 'firstName lastName email nomOrganisation adresse role avatar')
+      .populate('association', 'firstName lastName email nomOrganisation adresse telephone role avatar')
+      .populate('femme', 'firstName lastName email role avatar telephone')
+      .populate('accepted_by_femme', 'firstName lastName email role avatar telephone')
       .populate({
         path: 'demande',
         populate: {
           path: 'femme',
-          select: 'firstName lastName email role avatar'
+          select: 'firstName lastName email role avatar telephone'
         }
       });
 
@@ -121,12 +150,14 @@ async function listPropositionsAide(req, res) {
 async function getPropositionAide(req, res) {
   try {
     const proposition = await propositionAideModel.findById(req.params.id)
-      .populate('association', 'firstName lastName email nomOrganisation adresse role avatar')
+      .populate('association', 'firstName lastName email nomOrganisation adresse telephone role avatar')
+      .populate('femme', 'firstName lastName email role avatar telephone')
+      .populate('accepted_by_femme', 'firstName lastName email role avatar telephone')
       .populate({
         path: 'demande',
         populate: {
           path: 'femme',
-          select: 'firstName lastName email role avatar'
+          select: 'firstName lastName email role avatar telephone'
         }
       });
 
@@ -135,17 +166,27 @@ async function getPropositionAide(req, res) {
     }
 
     if (req.user.role === 'FEMME MALADE') {
-      // Les femmes peuvent voir :
-      // 1. Les propositions liées à leurs demandes
-      // 2. Les propositions générales (sans demande spécifique)
-      const hasDemande = proposition.demande;
-      if (hasDemande) {
-        const femmeId = proposition?.demande?.femme?._id?.toString();
-        if (femmeId !== req.user._id.toString()) {
-          return res.status(403).json({ status: false, message: 'Accès non autorisé à cette proposition' });
-        }
+      const mesDemandes = await demandeModel.find({ femme: req.user._id }).select('_id');
+      const mesDemandeIds = mesDemandes.map((d) => d._id.toString());
+
+      const propFemmeId = proposition.femme?._id?.toString() || proposition.femme?.toString();
+      const propDemandeId = proposition.demande?._id?.toString() || proposition.demande?.toString();
+      const isTiedToHer = propFemmeId === req.user._id.toString();
+      const isHerDemande = propDemandeId && mesDemandeIds.includes(propDemandeId);
+      const isGeneral = !propFemmeId && !propDemandeId;
+      const isAvailable = isGeneral && proposition.statut === 'PROPOSEE' && !proposition.accepted_by_femme;
+      const isHerAccepted = isGeneral && (proposition.accepted_by_femme?._id?.toString() || proposition.accepted_by_femme?.toString()) === req.user._id.toString();
+
+      if (!isTiedToHer && !isHerDemande && !isAvailable && !isHerAccepted) {
+        return res.status(403).json({ status: false, message: 'Accès non autorisé à cette proposition' });
       }
-      // Pour les propositions générales, pas de vérification supplémentaire
+    }
+
+    if (req.user.role === 'ASSOCIATION') {
+      const assocId = proposition.association?._id?.toString() || proposition.association?.toString();
+      if (assocId !== req.user._id.toString()) {
+        return res.status(403).json({ status: false, message: 'Accès non autorisé à cette proposition' });
+      }
     }
 
     res.status(200).json({ status: true, proposition });
@@ -225,21 +266,42 @@ async function changePropositionStatus(req, res) {
     }
 
     if (req.user.role === 'FEMME MALADE') {
-      // Pour les propositions liées à une demande, vérifier que la demande appartient à la femme
-      if (proposition.demande) {
-        const femmeId = proposition?.demande?.femme?.toString();
-        if (femmeId !== req.user._id.toString()) {
-          return res.status(403).json({ status: false, message: 'Accès non autorisé à cette proposition' });
-        }
+      const mesDemandes = await demandeModel.find({ femme: req.user._id }).select('_id');
+      const mesDemandeIds = mesDemandes.map((d) => d._id.toString());
+
+      const propFemmeId = proposition.femme?.toString();
+      const propDemandeId = proposition.demande?._id?.toString() || proposition.demande?.toString();
+      const isTiedToHer = propFemmeId === req.user._id.toString();
+      const isHerDemande = propDemandeId && mesDemandeIds.includes(propDemandeId);
+      const isGeneral = !propFemmeId && !propDemandeId;
+      const isAvailable = isGeneral && proposition.statut === 'PROPOSEE' && !proposition.accepted_by_femme;
+      const isHerAccepted = isGeneral && proposition.accepted_by_femme?.toString() === req.user._id.toString();
+
+      if (!isTiedToHer && !isHerDemande && !isAvailable && !isHerAccepted) {
+        return res.status(403).json({ status: false, message: 'Accès non autorisé à cette proposition' });
       }
-      // Pour les propositions générales, pas de vérification supplémentaire
 
       if (!['ACCEPTEE', 'REFUSEE'].includes(statut)) {
         return res.status(400).json({ status: false, message: 'La femme peut seulement accepter ou refuser la proposition' });
       }
+
+      // Pour les propositions générales, un refus est tracé par femme sans changer le statut global
+      if (statut === 'REFUSEE' && isGeneral) {
+        await propositionAideModel.findByIdAndUpdate(req.params.id, {
+          $addToSet: { refused_by: req.user._id }
+        });
+        await saveLog({ action: `${req.user.firstName} a refusé une proposition générale`, actorId: req.user._id });
+        return res.status(200).json({ status: true, message: 'Proposition refusée', proposition });
+      }
     }
 
     proposition.statut = statut;
+    // Enregistrer quelle femme a accepté la proposition
+    if (statut === 'ACCEPTEE') {
+      proposition.accepted_by_femme = req.user._id;
+    } else if (statut === 'REFUSEE') {
+      proposition.accepted_by_femme = undefined;
+    }
     await proposition.save();
 
     await saveLog({
@@ -253,11 +315,23 @@ async function changePropositionStatus(req, res) {
       await notifyUser(
         proposition.association,
         isAccepted
-          ? 'Votre proposition d\'aide a été acceptée par la bénéficiaire.'
+          ? `Votre proposition d'aide a été acceptée par ${req.user.firstName} ${req.user.lastName || ''}.`.trim()
           : 'Votre proposition d\'aide a été refusée par la bénéficiaire.',
         isAccepted ? 'proposition_acceptee' : 'proposition_rejetee',
-        '/mes-propositions'
+        '/association/propositions-aide'
       );
+
+      // Envoyer un e-mail à l'association avec les coordonnées de la femme acceptante
+      if (isAccepted) {
+        const assoc = await userModel.findById(proposition.association).select('email firstName nomOrganisation');
+        if (assoc?.email) {
+          await sendEmail({
+            email: assoc.email,
+            subject: "Proposition d'aide acceptée – Coordonnées de la bénéficiaire",
+            content: `Bonjour ${assoc.nomOrganisation || assoc.firstName},\n\nVotre proposition d'aide a été acceptée.\n\nVoici les coordonnées de la bénéficiaire :\n\nNom complet : ${req.user.firstName} ${req.user.lastName || ''}\nTéléphone : ${req.user.telephone || 'Non renseigné'}\nEmail : ${req.user.email}\nRégion : ${req.user.region || 'Non renseignée'}\n\nVous pouvez la contacter directement pour organiser l'aide.\n\nCordialement,\nLa plateforme`
+          });
+        }
+      }
     }
     // If accepted, also confirm accompaniment to the femme malade
     if (statut === 'ACCEPTEE' && proposition.demande?.femme) {

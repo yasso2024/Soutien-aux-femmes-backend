@@ -26,7 +26,7 @@ async function createDemande(req, res) {
     // Notify admins and associations of the new request
     await notifyRole(
       ['ADMINISTRATEUR', 'ASSOCIATION'],
-      `Nouvelle demande d'aide soumise par ${req.user.firstName} ${req.user.lastName}.`,
+      `Nouvelle demande d'aide soumise par ${req.user.firstName} ${req.user.lastName}${req.user.telephone ? ` (📞 ${req.user.telephone})` : ''}.`,
       'demande_nouvelle',
       '/demandes'
     );
@@ -54,22 +54,27 @@ async function listDemandes(req, res) {
     const filter = {};
 
     if (req.user.role === 'FEMME MALADE') {
+      // FEMME MALADE voit toujours et uniquement ses propres demandes
       filter.femme = req.user._id;
-    }
-
-    if (req.query.femme) {
+    } else if (req.user.role === 'BENEVOLE') {
+      // BENEVOLE voit uniquement les demandes validées et ouvertes (pas encore prises en charge)
+      filter.statut = 'VALIDEE';
+    } else if (req.user.role === 'DONATEUR' || req.user.role === 'DONTEUR') {
+      // DONATEUR voit uniquement les demandes encore en attente (non acceptées par l'association)
+      filter.statut = 'EN_ATTENTE';
+    } else if (req.query.femme) {
       filter.femme = req.query.femme;
     }
 
-    if (req.query.statut) {
+    if ((req.user.role !== 'DONATEUR' && req.user.role !== 'DONTEUR') && req.query.statut) {
       filter.statut = req.query.statut;
     }
 
     const demandes = await demandeModel
       .find(filter)
-      .populate('femme', 'firstName lastName email role')
+      .populate('femme', 'firstName lastName email role telephone region')
       .populate('validePar', 'firstName lastName email role')
-      .populate('don')
+      .populate({ path: 'don', select: 'statut donateur', populate: { path: 'donateur', select: '_id' } })
       .sort({ createdAt: -1 });
 
     res.status(200).json({ status: true, demandes });
@@ -82,12 +87,19 @@ async function getDemande(req, res) {
   try {
     const demande = await demandeModel
       .findById(req.params.id)
-      .populate('femme', 'firstName lastName email role')
+      .populate('femme', 'firstName lastName email role telephone')
       .populate('validePar', 'firstName lastName email role')
       .populate('don');
 
     if (!demande) {
       return res.status(404).json({ status: false, message: 'Demande introuvable' });
+    }
+
+    if (req.user.role === 'FEMME MALADE') {
+      const femmeId = demande.femme?._id?.toString() || demande.femme?.toString();
+      if (femmeId !== req.user._id.toString()) {
+        return res.status(403).json({ status: false, message: 'Accès non autorisé à cette demande' });
+      }
     }
 
     res.status(200).json({ status: true, demande });

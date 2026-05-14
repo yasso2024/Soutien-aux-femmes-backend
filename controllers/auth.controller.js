@@ -17,7 +17,7 @@ async function signUp(req, res) {
             })
         };
         // firstName, lastName, email, password, confirmPassword, dob
-        const { firstName, lastName, email, password, confirmPassword, dob ,telephone,role,region} = req.body;
+        const { firstName, lastName, nomOrganisation, email, password, confirmPassword, dob, telephone, role, region, dateDeclaration, dateDiagnostic, adresse, membreDepuis, competences } = req.body;
 
         const existingUser = await userModel.findOne({ email });
 
@@ -28,44 +28,59 @@ async function signUp(req, res) {
             })
         }
 
+        // For associations use nomOrganisation as firstName
+        const resolvedFirstName = role === 'ASSOCIATION' ? (nomOrganisation || firstName || '') : (firstName || '');
+        const resolvedLastName = role === 'ASSOCIATION' ? '' : (lastName || '');
+
         const user = await userModel({
             email: email,
-            firstName: firstName,
-            lastName: lastName,
+            firstName: resolvedFirstName,
+            lastName: resolvedLastName,
+            nomOrganisation: role === 'ASSOCIATION' ? (nomOrganisation || firstName) : undefined,
             password: password,
             confirmPassword: confirmPassword,
             dob: dob,
-            telephone:telephone,
-            role:role,
-            region: region
+            telephone: telephone,
+            role: role,
+            region: region,
+            dateDeclaration: role === 'FEMME MALADE' ? dateDeclaration : undefined,
+            dateDiagnostic: role === 'FEMME MALADE' ? dateDiagnostic : undefined,
+            membreDepuis: role === 'FEMME MALADE' ? membreDepuis : undefined,
+            adresse: role === 'ASSOCIATION' ? adresse : undefined,
+            competences: role === 'BENEVOLE' ? (competences || []) : undefined,
         })
 
         await user.save();
-   // Générer token après création
-    const token = generateToken(user._id);
-        // SEND WELCOME MAIL (TODO)
+        // Générer token après création
+        const token = generateToken(user._id);
+
+        // Notify admins of the new registration
+        const isAssociation = role === 'ASSOCIATION';
+        const displayName = isAssociation
+          ? (nomOrganisation || resolvedFirstName)
+          : `${resolvedFirstName} ${resolvedLastName}`.trim();
+
+        // SEND WELCOME MAIL
         const options = {
             email: email,
             subject: "Welcome Mail",
-            content: `Welcome aboard ${firstName} ${lastName}. Sent from http://localhost:3000`
+            content: `Welcome aboard ${displayName}. Sent from http://localhost:3000`
         }
 
         await sendEmail(options);
 
-        // Notify admins of the new registration
-        const isAssociation = role === 'ASSOCIATION';
         await notifyRole(
           'ADMINISTRATEUR',
           isAssociation
-            ? `Nouvelle association inscrite : ${firstName} ${lastName}.`
-            : `Nouvel utilisateur inscrit : ${firstName} ${lastName} (${role || 'USER'}).`,
+            ? `Nouvelle association inscrite : ${displayName}.`
+            : `Nouvel utilisateur inscrit : ${displayName} (${role || 'USER'}).`,
           isAssociation ? 'new_association' : 'new_user',
           '/users'
         );
 
         res.status(201).json({
             status: true,
-            message: `Welcome aboard ${firstName} ${lastName}`
+            message: `Welcome aboard ${displayName}`
         })
 
     } catch (error) {
@@ -172,7 +187,6 @@ async function changePassword(req,res) {
         });
     }
 }
-module.exports = { signUp, login ,getMe,changePassword, forgotPassword, resetPassword};
 
 async function forgotPassword(req, res) {
     try {
@@ -246,3 +260,4 @@ async function resetPassword(req, res) {
         res.status(500).json({ status: false, message: error.message });
     }
 }
+module.exports = { signUp, login ,getMe,changePassword, forgotPassword, resetPassword};

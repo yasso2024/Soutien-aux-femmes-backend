@@ -18,7 +18,7 @@ const affectationSchema = new mongoose.Schema({
   action: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'actionsSolidaires',
-    required: true
+    required: false
   },
   demande: {
     type: mongoose.Schema.Types.ObjectId,
