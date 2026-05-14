@@ -66,9 +66,32 @@ async function deleteNotification(req, res) {
   }
 }
 
+async function markAllAsRead(req, res) {
+  try {
+    await notificationModel.updateMany(
+      { utilisateur: req.user._id, lu: false },
+      { $set: { lu: true } }
+    );
+    res.status(200).json({ status: true, message: 'Toutes les notifications marquées comme lues' });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+}
+
+async function deleteAllNotifications(req, res) {
+  try {
+    await notificationModel.deleteMany({ utilisateur: req.user._id });
+    res.status(200).json({ status: true, message: 'Toutes les notifications supprimées' });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+}
+
 module.exports = {
   createNotification,
   listNotifications,
   markAsRead,
-  deleteNotification
+  markAllAsRead,
+  deleteNotification,
+  deleteAllNotifications
 };

@@ -12,8 +12,10 @@ const propositionAideRouter = require("./routes/propositionAide.route");
 const affectationRouter = require("./routes/affectation.route");
 const notificationRouter = require("./routes/notification.route");
 const chatbotRouter = require("./routes/chatbot.route");
+const profilBenevoleRouter = require("./routes/profilBenevole.route");
 const cors = require('cors');
 const path = require('path');
+const { scheduleAutoExpire } = require('./jobs/autoExpire');
 
 
 const app = express();
@@ -37,4 +39,9 @@ app.use('/propositions-aide', propositionAideRouter);
 app.use('/affectations', affectationRouter);
 app.use("/chatbot", chatbotRouter);
 app.use('/notifications', notificationRouter);
+app.use('/profils-benevoles', profilBenevoleRouter);
+
+// Démarrer le job d'expiration automatique (7 jours → REFUSEE/REFUSE)
+scheduleAutoExpire();
+
 module.exports = app;

@@ -1,6 +1,14 @@
 const mongoose = require('mongoose');
 
 const propositionAideSchema = new mongoose.Schema({
+  titre: {
+    type: String,
+    trim: true
+  },
+  typeAide: {
+    type: String,
+    enum: ['Transport', 'Alimentation', 'Soins', 'Soutien psychologique', 'Administratif', 'Financier', 'Autre'],
+  },
   description: {
     type: String,
     required: true,
@@ -18,13 +26,27 @@ const propositionAideSchema = new mongoose.Schema({
   demande: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'demandes',
-    required: true
+    required: false
   },
   association: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'users',
     required: true
-  }
+  },
+  femme: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'users',
+    required: false
+  },
+  accepted_by_femme: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'users',
+    required: false
+  },
+  refused_by: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'users'
+  }]
 }, { timestamps: true });
 
 const propositionAideModel = mongoose.model('propositionsAide', propositionAideSchema);

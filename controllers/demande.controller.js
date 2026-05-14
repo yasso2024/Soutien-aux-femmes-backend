@@ -1,7 +1,9 @@
 const demandeModel = require('../models/demande.model');
+const userModel = require('../models/user.model');
+const donModel = require('../models/don.model');
 const { createDemandeSchema, updateDemandeSchema } = require('../schemas/demande.schema');
 const { saveLog } = require('../utils/logger');
-const { notifyUser } = require('../utils/notify');
+const { notifyUser, notifyRole } = require('../utils/notify');
 
 async function createDemande(req, res) {
   try {
@@ -21,6 +23,22 @@ async function createDemande(req, res) {
       actorId: req.user._id
     });
 
+    // Notify admins and associations of the new request
+    await notifyRole(
+      ['ADMINISTRATEUR', 'ASSOCIATION'],
+      `Nouvelle demande d'aide soumise par ${req.user.firstName} ${req.user.lastName}${req.user.telephone ? ` (📞 ${req.user.telephone})` : ''}.`,
+      'demande_nouvelle',
+      '/demandes'
+    );
+
+    // Confirm to the femme herself
+    await notifyUser(
+      req.user._id,
+      `Votre demande d'aide a été soumise avec succès. Elle est en attente de validation.`,
+      'demande_en_attente',
+      '/femme/demandes'
+    );
+
     res.status(201).json({
       status: true,
       message: 'Demande créée avec succès',
@@ -36,22 +54,27 @@ async function listDemandes(req, res) {
     const filter = {};
 
     if (req.user.role === 'FEMME MALADE') {
+      // FEMME MALADE voit toujours et uniquement ses propres demandes
       filter.femme = req.user._id;
-    }
-
-    if (req.query.femme) {
+    } else if (req.user.role === 'BENEVOLE') {
+      // BENEVOLE voit uniquement les demandes validées et ouvertes (pas encore prises en charge)
+      filter.statut = 'VALIDEE';
+    } else if (req.user.role === 'DONATEUR' || req.user.role === 'DONTEUR') {
+      // DONATEUR voit les demandes validées par l'admin — prêtes à recevoir un don
+      filter.statut = 'VALIDEE';
+    } else if (req.query.femme) {
       filter.femme = req.query.femme;
     }
 
-    if (req.query.statut) {
+    if ((req.user.role !== 'DONATEUR' && req.user.role !== 'DONTEUR') && req.query.statut) {
       filter.statut = req.query.statut;
     }
 
     const demandes = await demandeModel
       .find(filter)
-      .populate('femme', 'firstName lastName email role')
+      .populate('femme', 'firstName lastName email role telephone region')
       .populate('validePar', 'firstName lastName email role')
-      .populate('don')
+      .populate({ path: 'don', select: 'statut donateur', populate: { path: 'donateur', select: '_id' } })
       .sort({ createdAt: -1 });
 
     res.status(200).json({ status: true, demandes });
@@ -64,12 +87,19 @@ async function getDemande(req, res) {
   try {
     const demande = await demandeModel
       .findById(req.params.id)
-      .populate('femme', 'firstName lastName email role')
+      .populate('femme', 'firstName lastName email role telephone')
       .populate('validePar', 'firstName lastName email role')
       .populate('don');
 
     if (!demande) {
       return res.status(404).json({ status: false, message: 'Demande introuvable' });
+    }
+
+    if (req.user.role === 'FEMME MALADE') {
+      const femmeId = demande.femme?._id?.toString() || demande.femme?.toString();
+      if (femmeId !== req.user._id.toString()) {
+        return res.status(403).json({ status: false, message: 'Accès non autorisé à cette demande' });
+      }
     }
 
     res.status(200).json({ status: true, demande });
@@ -155,19 +185,33 @@ async function changeDemandeStatus(req, res) {
     demande.validePar = req.user._id;
     await demande.save();
 
+    // Cascade don status when demande is refused or finished
+    if (demande.don) {
+      if (statut === 'REFUSEE') {
+        await donModel.findByIdAndUpdate(demande.don, { statut: 'REFUSE' });
+      } else if (statut === 'TERMINEE') {
+        await donModel.findByIdAndUpdate(demande.don, { statut: 'CONFIRME' });
+      }
+    }
+
     await saveLog({
       action: `${req.user.firstName} a changé le statut d'une demande à ${statut}`,
       actorId: req.user._id
     });
 
     const statusMessages = {
-      VALIDEE: 'Votre demande d\'aide a été validée.',
-      REFUSEE: 'Votre demande d\'aide a été refusée.',
-      EN_COURS: 'Votre demande d\'aide est en cours de traitement.',
-      TERMINEE: 'Votre demande d\'aide a été clôturée.'
+      VALIDEE:   { msg: "Votre demande d'aide a été validée.",              type: 'demande_acceptee',  lien: '/mes-demandes' },
+      REFUSEE:   { msg: "Votre demande d'aide a été refusée.",              type: 'demande_rejetee',   lien: '/mes-demandes' },
+      EN_COURS:  { msg: "Votre demande d'aide est en cours de traitement.", type: 'demande_en_cours',  lien: '/mes-demandes' },
+      TERMINEE:  { msg: "Votre demande d'aide a été clôturée.",             type: 'demande_terminee',  lien: '/mes-demandes' },
     };
-    if (statusMessages[statut]) {
-      await notifyUser(demande.femme, statusMessages[statut]);
+    const notif = statusMessages[statut];
+    if (notif) {
+      await notifyUser(demande.femme, notif.msg, notif.type, notif.lien);
+    }
+    // Alert admins about pending requests needing attention
+    if (statut === 'EN_ATTENTE') {
+      await notifyRole('ADMINISTRATEUR', "Une demande est en attente de validation.", 'demande_en_attente', '/demandes');
     }
 
     res.status(200).json({

@@ -23,7 +23,7 @@ async function getDashboardStats(req, res) {
       userModel.countDocuments({ role: "FEMME MALADE" }),
       userModel.countDocuments({ role: "BENEVOLE" }),
       userModel.countDocuments({ role: "ASSOCIATION" }),
-      userModel.countDocuments({ role: "DONTEUR" }),
+      userModel.countDocuments({ role: { $in: ["DONTEUR", "DONATEUR"] } }),
       demandeModel.countDocuments(),
       demandeModel.countDocuments({ statut: "EN_ATTENTE" }),
       demandeModel.countDocuments({ statut: "VALIDEE" }),

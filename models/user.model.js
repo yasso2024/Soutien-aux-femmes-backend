@@ -1,6 +1,5 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
-const { lowercase } = require("zod");
 
 const userSchema = new mongoose.Schema(
   {
@@ -13,17 +12,22 @@ const userSchema = new mongoose.Schema(
     },
     firstName: {
       type: String,
-      required: [true, "First Name is required"],
-      trim: true, //anuler espace
+      trim: true,
     },
     lastName: {
       type: String,
-      required: [true, "Last Name is required"],
       trim: true,
     },
     telephone: {
       type: String,
       trim: true,
+      validate: {
+        validator: function (v) {
+          if (!v) return true; // allow empty on update
+          return /^\d{8}$/.test(v);
+        },
+        message: "Le téléphone doit contenir exactement 8 chiffres",
+      },
     },
     password: {
       type: String,
@@ -49,6 +53,7 @@ const userSchema = new mongoose.Schema(
         "ADMINISTRATEUR",
         "BENEVOLE",
         "DONTEUR",
+        "DONATEUR",
         "ASSOCIATION",
       ],
       default: "USER",
@@ -57,6 +62,12 @@ const userSchema = new mongoose.Schema(
       type: String,
     },
     dateDiagnostic: {
+      type: Date,
+    },
+    dateDeclaration: {
+      type: Date,
+    },
+    membreDepuis: {
       type: Date,
     },
     region: {
@@ -80,6 +91,14 @@ const userSchema = new mongoose.Schema(
     oneSignalPlayerId: {
       type: String,
       default: null,
+    },
+    resetPasswordToken: {
+      type: String,
+      select: false,
+    },
+    resetPasswordExpire: {
+      type: Date,
+      select: false,
     },
   },
   { timestamps: true },

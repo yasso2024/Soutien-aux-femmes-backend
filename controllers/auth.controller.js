@@ -2,12 +2,15 @@ const userModel = require('../models/user.model');
 const sendEmail = require('../utils/mailer');
 const { signUpSchema, loginSchema,changePasswordSchema } = require("../schemas/auth.schema");
 const { generateToken } = require('../utils/jwt');
+const { notifyRole } = require('../utils/notify');
+const crypto = require('crypto');
 
 async function signUp(req, res) {
     try {
         const validation = signUpSchema.safeParse(req.body);
 
         if (!validation.success) {
+            console.error('[signUp] Zod validation errors:', JSON.stringify(validation.error.flatten(), null, 2));
             return res.status(400).json({
                 status: false,
                 message: "Validation failed",
@@ -15,7 +18,7 @@ async function signUp(req, res) {
             })
         };
         // firstName, lastName, email, password, confirmPassword, dob
-        const { firstName, lastName, email, password, confirmPassword, dob ,telephone,role,region} = req.body;
+        const { firstName, lastName, nomOrganisation, email, password, confirmPassword, dob, telephone, role, region, dateDeclaration, dateDiagnostic, adresse, membreDepuis, competences } = req.body;
 
         const existingUser = await userModel.findOne({ email });
 
@@ -26,33 +29,59 @@ async function signUp(req, res) {
             })
         }
 
+        // For associations use nomOrganisation as firstName
+        const resolvedFirstName = role === 'ASSOCIATION' ? (nomOrganisation || firstName || '') : (firstName || '');
+        const resolvedLastName = role === 'ASSOCIATION' ? '' : (lastName || '');
+
         const user = await userModel({
             email: email,
-            firstName: firstName,
-            lastName: lastName,
+            firstName: resolvedFirstName,
+            lastName: resolvedLastName,
+            nomOrganisation: role === 'ASSOCIATION' ? (nomOrganisation || firstName) : undefined,
             password: password,
             confirmPassword: confirmPassword,
             dob: dob,
-            telephone:telephone,
-            role:role,
-            region: region
+            telephone: telephone,
+            role: role,
+            region: region,
+            dateDeclaration: role === 'FEMME MALADE' ? dateDeclaration : undefined,
+            dateDiagnostic: role === 'FEMME MALADE' ? dateDiagnostic : undefined,
+            membreDepuis: role === 'FEMME MALADE' ? membreDepuis : undefined,
+            adresse: role === 'ASSOCIATION' ? adresse : undefined,
+            competences: role === 'BENEVOLE' ? (competences || []) : undefined,
         })
 
         await user.save();
-   // Générer token après création
-    const token = generateToken(user._id);
-        // SEND WELCOME MAIL (TODO)
+        // Générer token après création
+        const token = generateToken(user._id);
+
+        // Notify admins of the new registration
+        const isAssociation = role === 'ASSOCIATION';
+        const displayName = isAssociation
+          ? (nomOrganisation || resolvedFirstName)
+          : `${resolvedFirstName} ${resolvedLastName}`.trim();
+
+        // SEND WELCOME MAIL
         const options = {
             email: email,
             subject: "Welcome Mail",
-            content: `Welcome aboard ${firstName} ${lastName}. Sent from http://localhost:3000`
+            content: `Welcome aboard ${displayName}. Sent from http://localhost:3000`
         }
 
         await sendEmail(options);
 
+        await notifyRole(
+          'ADMINISTRATEUR',
+          isAssociation
+            ? `Nouvelle association inscrite : ${displayName}.`
+            : `Nouvel utilisateur inscrit : ${displayName} (${role || 'USER'}).`,
+          isAssociation ? 'new_association' : 'new_user',
+          '/users'
+        );
+
         res.status(201).json({
             status: true,
-            message: `Welcome aboard ${firstName} ${lastName}`
+            message: `Welcome aboard ${displayName}`
         })
 
     } catch (error) {
@@ -109,12 +138,14 @@ async function login(req, res) {
 }
 async function getMe(req, res) {
     try {
+        console.log('[AUTH] /me endpoint called, user:', req.user?._id);
         res.status(200).json({
             status: true,
             user: req.user
         });
 
     } catch (error) {
+        console.error('[AUTH /me ERROR]', error.message, error.stack);
         res.status(500).json({
             message: error.message || "Internal server error"
         });
@@ -124,7 +155,9 @@ async function changePassword(req,res) {
     try {
         const validation = changePasswordSchema.safeParse(req.body);
         if(! validation.success){
-            return res. status (400).json({
+            return res.status(400).json({
+                status: false,
+                message: "Validation failed",
                 errors: validation.error.flatten()
         });
     }
@@ -155,4 +188,77 @@ async function changePassword(req,res) {
         });
     }
 }
-module.exports = { signUp, login ,getMe,changePassword};
+
+async function forgotPassword(req, res) {
+    try {
+        const { email } = req.body;
+        if (!email) {
+            return res.status(400).json({ status: false, message: 'Email is required' });
+        }
+
+        const user = await userModel.findOne({ email });
+        if (!user) {
+            // Return success even if user not found to avoid email enumeration
+            return res.status(200).json({ status: true, message: 'If that email is registered, a reset link has been sent.' });
+        }
+
+        // Generate a random token
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+        await userModel.updateOne(
+            { _id: user._id },
+            { $set: { resetPasswordToken: hashedToken, resetPasswordExpire: new Date(Date.now() + 15 * 60 * 1000) } }
+        );
+
+        const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password/${rawToken}`;
+
+        await sendEmail({
+            email: user.email,
+            subject: 'Réinitialisation de mot de passe',
+            content: `Bonjour ${user.firstName},\n\nCliquez sur ce lien pour réinitialiser votre mot de passe (valable 15 minutes) :\n${resetUrl}\n\nSi vous n'avez pas fait cette demande, ignorez cet email.`
+        });
+
+        res.status(200).json({ status: true, message: 'Un email de réinitialisation a été envoyé.' });
+    } catch (error) {
+        res.status(500).json({ status: false, message: error.message });
+    }
+}
+
+async function resetPassword(req, res) {
+    try {
+        const { token } = req.params;
+        const { newPassword, confirmNewPassword } = req.body;
+
+        if (!newPassword || !confirmNewPassword) {
+            return res.status(400).json({ status: false, message: 'New password and confirmation are required' });
+        }
+
+        const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+        console.log('[RESET PWD] hashedToken:', hashedToken);
+        console.log('[RESET PWD] now:', new Date());
+
+        const dbUser = await userModel.findOne({ resetPasswordToken: hashedToken }).select('+resetPasswordToken +resetPasswordExpire');
+        console.log('[RESET PWD] user found by token:', dbUser ? `id=${dbUser._id} expire=${dbUser.resetPasswordExpire}` : 'NOT FOUND');
+
+        const user = await userModel.findOne({
+            resetPasswordToken: hashedToken,
+            resetPasswordExpire: { $gt: new Date() }
+        }).select('+password +resetPasswordToken +resetPasswordExpire');
+
+        if (!user) {
+            return res.status(400).json({ status: false, message: 'Token invalide ou expiré.' });
+        }
+
+        user.password = newPassword;
+        user.confirmPassword = confirmNewPassword;
+        user.resetPasswordToken = undefined;
+        user.resetPasswordExpire = undefined;
+        await user.save();
+
+        res.status(200).json({ status: true, message: 'Mot de passe réinitialisé avec succès.' });
+    } catch (error) {
+        res.status(500).json({ status: false, message: error.message });
+    }
+}
+module.exports = { signUp, login ,getMe,changePassword, forgotPassword, resetPassword};

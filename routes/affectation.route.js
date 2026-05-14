@@ -7,12 +7,14 @@ const {
   updateAffectation,
   deleteAffectation,
   confirmerParticipation,
-  changeAffectationStatus
+  changeAffectationStatus,
+  postulerAide,
 } = require('../controllers/affectation.controller');
 
 const router = express.Router();
 
 router.post('/', protect, createAffectation);
+router.post('/postuler/:demandeId', protect, postulerAide);
 router.get('/', protect, listAffectations);
 router.get('/:id', protect, getAffectation);
 router.put('/:id', protect, updateAffectation);
