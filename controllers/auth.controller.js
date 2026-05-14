@@ -10,6 +10,7 @@ async function signUp(req, res) {
         const validation = signUpSchema.safeParse(req.body);
 
         if (!validation.success) {
+            console.error('[signUp] Zod validation errors:', JSON.stringify(validation.error.flatten(), null, 2));
             return res.status(400).json({
                 status: false,
                 message: "Validation failed",

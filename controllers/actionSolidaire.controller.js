@@ -93,7 +93,7 @@ async function listActionsSolidaires(req, res) {
 
     // For BENEVOLE: annotate each action with _myRefused / _myPending / _myAccepted
     if (req.user.role === 'BENEVOLE') {
-      const myAffectations = await affectationModel.find({ benevole: req.user._id, action: { $ne: null } }).select('action statut');
+      const myAffectations = await affectationModel.find({ benevole: req.user._id, action: { $ne: null } }).select('action statut source');
       const refusedSet = new Set(
         myAffectations.filter((a) => a.statut === 'REFUSEE' && a.action).map((a) => a.action.toString())
       );
@@ -103,15 +103,44 @@ async function listActionsSolidaires(req, res) {
       const acceptedSet = new Set(
         myAffectations.filter((a) => a.statut === 'ACCEPTEE' && a.action).map((a) => a.action.toString())
       );
+      // Invitations are EN_ATTENTE affectations created BY the association (source = INVITATION)
+      const invitedSet = new Set(
+        myAffectations.filter((a) => a.statut === 'EN_ATTENTE' && a.source === 'INVITATION' && a.action).map((a) => a.action.toString())
+      );
+      // Map affectation _id by action for use in Accept/Refuse calls
+      const invitedAffMap = {};
+      myAffectations.filter((a) => a.statut === 'EN_ATTENTE' && a.source === 'INVITATION' && a.action).forEach((a) => {
+        invitedAffMap[a.action.toString()] = a._id.toString();
+      });
+
+      // Build a set of dates where the bénévole already has a confirmed (ACCEPTEE) action
+      const acceptedActionIds = myAffectations
+        .filter((a) => a.statut === 'ACCEPTEE' && a.action)
+        .map((a) => a.action.toString());
+      const acceptedActions = acceptedActionIds.length > 0
+        ? await actionSolidaireModel.find({ _id: { $in: acceptedActionIds } }).select('dateAction')
+        : [];
+      // Store as "YYYY-MM-DD" strings for O(1) date lookup
+      const busyDates = new Set(
+        acceptedActions
+          .filter((a) => a.dateAction)
+          .map((a) => new Date(a.dateAction).toISOString().slice(0, 10))
+      );
+
       const annotated = actions.map((a) => {
         const obj = a.toObject();
         obj._myRefused  = refusedSet.has(a._id.toString());
         obj._myPending  = pendingSet.has(a._id.toString());
         obj._myAccepted = acceptedSet.has(a._id.toString());
+        obj._myInvited  = invitedSet.has(a._id.toString());
+        obj._invitationAffId = invitedAffMap[a._id.toString()] || null;
         obj._isFull     = !!(a.maxBenevoles && (a.benevoles?.length || 0) >= a.maxBenevoles);
         // Flag taken by someone else (should never reach here since query already excludes them, extra safety)
         const respId = a.benevoleResponsable?._id?.toString() || a.benevoleResponsable?.toString();
         obj._isTakenByOther = !!(respId && respId !== req.user._id.toString());
+        // Availability: does the bénévole already have a confirmed action on this date?
+        const actionDate = a.dateAction ? new Date(a.dateAction).toISOString().slice(0, 10) : null;
+        obj._hasDateConflict = !!(actionDate && busyDates.has(actionDate) && !obj._myAccepted);
         return obj;
       });
       return res.status(200).json({ status: true, actions: annotated });
@@ -271,6 +300,7 @@ async function participerAction(req, res) {
     if (existing && existing.statut === 'REFUSEE') {
       // Re-application after previous refusal — reset to EN_ATTENTE
       existing.statut = 'EN_ATTENTE';
+      existing.source = 'CANDIDATURE';
       await existing.save();
       var affectation = existing;
     } else {
@@ -278,6 +308,7 @@ async function participerAction(req, res) {
         benevole: req.user._id,
         action: action._id,
         statut: 'EN_ATTENTE',
+        source: 'CANDIDATURE',
       });
     }
 
@@ -504,38 +535,39 @@ async function inviterBenevole(req, res) {
       });
     }
 
-    // Add to action's benevoles list
-    await actionSolidaireModel.findByIdAndUpdate(req.params.id, {
-      $addToSet: { benevoles: benevoleId },
-    });
-
-    // Create/update affectation as ACCEPTEE
+    // Create/update affectation as EN_ATTENTE (invitation — bénévole must accept or refuse)
     const existing = await affectationModel.findOne({ benevole: benevoleId, action: action._id });
     if (existing) {
-      existing.statut = 'ACCEPTEE';
-      await existing.save();
+      if (existing.statut !== 'EN_ATTENTE') {
+        return res.status(409).json({
+          status: false,
+          message: `Ce bénévole a déjà une affectation "${existing.statut}" pour cette action`
+        });
+      }
+      // Already pending — idempotent
     } else {
       await affectationModel.create({
         benevole: benevoleId,
         action: action._id,
-        statut: 'ACCEPTEE',
+        statut: 'EN_ATTENTE',
+        source: 'INVITATION',
       });
     }
 
     await saveLog({
-      action: `${req.user.firstName} a invité un bénévole à l'action "${action.titre}"`,
+      action: `${req.user.firstName} a envoyé une invitation à un bénévole pour l'action "${action.titre}"`,
       actorId: req.user._id,
     });
 
-    // Notify the invited bénévole
+    // Notify the invited bénévole — they must accept or refuse from their space
     await notifyUser(
       benevoleId,
-      `🎉 Vous avez été invité(e) par ${req.user.nomOrganisation || req.user.firstName} à participer à l'action solidaire "${action.titre}".`,
-      'nouvelle_action',
-      '/benevole/actions-solidaires'
+      `💌 Vous avez été invité(e) par ${req.user.nomOrganisation || req.user.firstName} à participer à l'action solidaire "${action.titre}". Consultez vos affectations pour accepter ou refuser.`,
+      'affectation_invitation',
+      '/benevole/affectations'
     );
 
-    res.status(200).json({ status: true, message: 'Bénévole invité avec succès' });
+    res.status(200).json({ status: true, message: 'Invitation envoyée avec succès' });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

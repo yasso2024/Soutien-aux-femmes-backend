@@ -5,6 +5,11 @@ const affectationSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   },
+  source: {
+    type: String,
+    enum: ['INVITATION', 'CANDIDATURE'],
+    default: 'CANDIDATURE'
+  },
   statut: {
     type: String,
     enum: ['EN_ATTENTE', 'ACCEPTEE', 'REFUSEE', 'TERMINEE'],

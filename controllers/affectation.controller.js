@@ -20,6 +20,10 @@ async function createAffectation(req, res) {
       if (demande?.femme) payload.femme = demande.femme;
     }
 
+    // If the creator is not the bénévole themselves, this is an invitation sent by the association/admin
+    const isInvitation = req.user._id.toString() !== payload.benevole?.toString();
+    if (isInvitation) payload.source = 'INVITATION';
+
     const affectation = await affectationModel.create(payload);
 
     await saveLog({
@@ -27,13 +31,13 @@ async function createAffectation(req, res) {
       actorId: req.user._id
     });
 
-    // Notify the bénévole they have been assigned
+    // Notify the bénévole of the invitation — they must accept or refuse
     if (req.body.benevole) {
       await notifyUser(
         req.body.benevole,
-        'Vous avez été affecté(e) à une action solidaire.',
-        'affectation',
-        '/mes-affectations'
+        'Vous avez reçu une invitation à participer à une action solidaire. Consultez vos affectations pour accepter ou refuser.',
+        'affectation_invitation',
+        '/benevole/affectations'
       );
     }
 
@@ -137,6 +141,14 @@ async function updateAffectation(req, res) {
       return res.status(400).json({ errors: validation.error.flatten() });
     }
 
+    // Association cannot force ACCEPTEE — only the bénévole can accept via /confirmer
+    if (req.user.role === 'ASSOCIATION' && req.body.statut === 'ACCEPTEE') {
+      return res.status(403).json({
+        status: false,
+        message: "Une association ne peut pas accepter une affectation à la place du bénévole."
+      });
+    }
+
     const affectation = await affectationModel.findById(req.params.id);
 
     if (!affectation) {
@@ -200,18 +212,93 @@ async function deleteAffectation(req, res) {
 
 async function confirmerParticipation(req, res) {
   try {
-    const affectation = await affectationModel.findById(req.params.id);
+    // Only the bénévole themselves can respond to an invitation
+    if (req.user.role !== 'BENEVOLE') {
+      return res.status(403).json({ status: false, message: 'Seuls les bénévoles peuvent répondre à une invitation' });
+    }
+
+    const affectation = await affectationModel.findById(req.params.id)
+      .populate({ path: 'action', select: 'association titre benevoles maxBenevoles statut' });
 
     if (!affectation) {
       return res.status(404).json({ status: false, message: 'Affectation introuvable' });
     }
 
-    affectation.statut = 'ACCEPTEE';
+    // Must own the affectation
+    if (affectation.benevole.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ status: false, message: 'Accès non autorisé' });
+    }
+
+    // Only EN_ATTENTE invitations can be answered
+    if (affectation.statut !== 'EN_ATTENTE') {
+      return res.status(400).json({
+        status: false,
+        message: `Cette affectation est déjà "${affectation.statut}" — elle ne peut plus être modifiée`
+      });
+    }
+
+    const statut = req.body.statut;
+    if (!['ACCEPTEE', 'REFUSEE'].includes(statut)) {
+      return res.status(400).json({ status: false, message: 'Statut invalide. Valeurs acceptées : ACCEPTEE, REFUSEE' });
+    }
+
+    // If accepting, check the action is not already full
+    if (statut === 'ACCEPTEE' && affectation.action) {
+      const actionDoc = affectation.action;
+      if (actionDoc.maxBenevoles && (actionDoc.benevoles?.length || 0) >= actionDoc.maxBenevoles) {
+        return res.status(409).json({
+          status: false,
+          message: `Cette action est complète (${actionDoc.benevoles.length}/${actionDoc.maxBenevoles} bénévoles). Impossible d'accepter.`
+        });
+      }
+    }
+
+    affectation.statut = statut;
     await affectation.save();
+
+    // Sync action.benevoles when accepted
+    const actionId = affectation.action?._id || affectation.action;
+    if (actionId) {
+      if (statut === 'ACCEPTEE') {
+        const updatedAction = await actionSolidaireModel.findByIdAndUpdate(
+          actionId,
+          { $addToSet: { benevoles: affectation.benevole } },
+          { new: true }
+        ).select('maxBenevoles benevoles statut');
+        // Auto-validate action when full
+        if (updatedAction?.maxBenevoles && (updatedAction.benevoles?.length || 0) >= updatedAction.maxBenevoles) {
+          if (updatedAction.statut === 'EN_ATTENTE') {
+            await actionSolidaireModel.findByIdAndUpdate(actionId, { statut: 'VALIDEE' });
+          }
+        }
+      } else if (statut === 'REFUSEE') {
+        await actionSolidaireModel.findByIdAndUpdate(actionId, { $pull: { benevoles: affectation.benevole } });
+      }
+    }
+
+    await saveLog({
+      action: `${req.user.firstName} a ${statut === 'ACCEPTEE' ? 'accepté' : 'refusé'} une invitation à une action solidaire`,
+      actorId: req.user._id
+    });
+
+    // Notify the association of the bénévole's response
+    const actionTitle = affectation.action?.titre || 'l\'action solidaire';
+    const benevoleName = `${req.user.firstName} ${req.user.lastName}`.trim();
+    const assocId = affectation.action?.association;
+    if (assocId) {
+      await notifyUser(
+        assocId,
+        statut === 'ACCEPTEE'
+          ? `✅ ${benevoleName} a accepté votre invitation pour l'action "${actionTitle}".`
+          : `🚫 ${benevoleName} a refusé votre invitation pour l'action "${actionTitle}".`,
+        statut === 'ACCEPTEE' ? 'participation_confirmee' : 'participation_refusee',
+        '/association/affectations'
+      );
+    }
 
     res.status(200).json({
       status: true,
-      message: 'Participation confirmée avec succès',
+      message: statut === 'ACCEPTEE' ? 'Participation confirmée avec succès' : 'Invitation refusée',
       affectation
     });
   } catch (error) {
@@ -243,6 +330,13 @@ async function changeAffectationStatus(req, res) {
       const actionAssocId = affectation.action.association?.toString();
       if (actionAssocId !== req.user._id.toString()) {
         return res.status(403).json({ status: false, message: 'Accès non autorisé' });
+      }
+      // The bénévole is the one who accepts or refuses — the association cannot force an acceptance
+      if (statut === 'ACCEPTEE') {
+        return res.status(403).json({
+          status: false,
+          message: "Une association ne peut pas accepter une affectation à la place du bénévole. Le bénévole doit répondre lui-même à l'invitation."
+        });
       }
     } else if (req.user.role !== 'ADMINISTRATEUR') {
       return res.status(403).json({ status: false, message: 'Accès non autorisé' });
@@ -418,6 +512,7 @@ async function postulerAide(req, res) {
       demande: demande._id,
       femme: demande.femme,
       statut: 'EN_ATTENTE',
+      source: 'CANDIDATURE',
     });
 
     await saveLog({
