@@ -18,16 +18,16 @@ const PropositionAide = require('../models/propositionAide.model');
 
 /* ─── helpers ─────────────────────────────────────────────────── */
 
-/** Date limite : aujourd'hui - 7 jours */
-function cutoffDate() {
+/** Date limite : aujourd'hui - N jours (défaut 7) */
+function cutoffDate(days = 7) {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - 7);
+  d.setDate(d.getDate() - days);
   return d;
 }
 
-async function expireCollection({ Model, dateField, pendingStatuses, refusedStatus, label }) {
-  const cutoff = cutoffDate();
+async function expireCollection({ Model, dateField, pendingStatuses, refusedStatus, label, days }) {
+  const cutoff = cutoffDate(days);
   const result = await Model.updateMany(
     {
       statut: { $in: pendingStatuses },
@@ -68,6 +68,7 @@ async function runAutoExpire() {
         pendingStatuses: ['EN_ATTENTE'],
         refusedStatus: 'REFUSEE',
         label: 'Affectations',
+        days: 4,           // auto-refus après 4 jours sans réponse
       }),
       expireCollection({
         Model: ActionSolidaire,

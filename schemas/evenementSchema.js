@@ -42,6 +42,22 @@ const evenementSchema = new mongoose.Schema(
         message: "La date de fin doit être après la date de début",
       },
     },
+    organisateur: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    heure: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    contact: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    participants: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
     rappelActive: {
       type: Boolean,
       default: false,
