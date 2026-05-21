@@ -47,7 +47,7 @@ const getEvenementById = async (req, res) => {
 
 const createEvenement = async (req, res) => {
   try {
-    const { titre, description, lieu, type, dateDebut, dateFin, rappelActive } =
+    const { titre, description, lieu, type, dateDebut, dateFin, rappelActive, organisateur, heure, contact } =
       req.body;
 
     if (!titre || !type || !dateDebut || !dateFin) {
@@ -70,6 +70,9 @@ const createEvenement = async (req, res) => {
       dateDebut,
       dateFin,
       rappelActive,
+      organisateur,
+      heure,
+      contact,
     });
 
     return res.status(201).json({

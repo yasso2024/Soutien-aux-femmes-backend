@@ -6,7 +6,7 @@ const createActionSolidaireSchema = z.object({
   dateAction: z.string().min(1, 'Date obligatoire'),
   lieu: z.string().optional(),
   demande: z.string().optional(),
-  maxBenevoles: z.number().int().positive().optional().nullable(),
+  maxBenevoles: z.coerce.number().int().positive().optional().nullable(),
 });
 
 const updateActionSolidaireSchema = z.object({
@@ -15,7 +15,7 @@ const updateActionSolidaireSchema = z.object({
   dateAction: z.string().optional(),
   lieu: z.string().optional(),
   demande: z.string().optional(),
-  maxBenevoles: z.number().int().positive().optional().nullable(),
+  maxBenevoles: z.coerce.number().int().positive().optional().nullable(),
 });
 
 module.exports = { createActionSolidaireSchema, updateActionSolidaireSchema };
