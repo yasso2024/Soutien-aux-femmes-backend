@@ -538,13 +538,19 @@ async function inviterBenevole(req, res) {
     // Create/update affectation as EN_ATTENTE (invitation — bénévole must accept or refuse)
     const existing = await affectationModel.findOne({ benevole: benevoleId, action: action._id });
     if (existing) {
-      if (existing.statut !== 'EN_ATTENTE') {
+      if (existing.statut === 'EN_ATTENTE') {
+        // Already pending invitation — idempotent, just re-send the notification
+      } else if (existing.statut === 'REFUSEE') {
+        // Allow re-inviting a bénévole who previously refused
+        existing.statut = 'EN_ATTENTE';
+        existing.source = 'INVITATION';
+        await existing.save();
+      } else if (existing.statut === 'ACCEPTEE') {
         return res.status(409).json({
           status: false,
-          message: `Ce bénévole a déjà une affectation "${existing.statut}" pour cette action`
+          message: 'Ce bénévole participe déjà à cette action'
         });
       }
-      // Already pending — idempotent
     } else {
       await affectationModel.create({
         benevole: benevoleId,

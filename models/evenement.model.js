@@ -42,8 +42,14 @@ const evenementSchema = new mongoose.Schema(
     },
     participants: [
       {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "User",
+        user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+        },
+        role: {
+          type: String,
+          enum: ["benevole", "femme_concernee", "association"],
+        },
       },
     ],
   },

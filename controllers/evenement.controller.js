@@ -162,6 +162,12 @@ const inscrireEvenement = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user?._id;
+    const { role } = req.body;
+
+    const validRoles = ["benevole", "femme_concernee", "association"];
+    if (!role || !validRoles.includes(role)) {
+      return res.status(400).json({ message: "Rôle invalide. Valeurs acceptées : benevole, femme_concernee, association" });
+    }
 
     const evenement = await Evenement.findById(id);
 
@@ -169,23 +175,34 @@ const inscrireEvenement = async (req, res) => {
       return res.status(404).json({ message: "Évènement introuvable" });
     }
 
-    const dejaInscrit = evenement.participants?.some(
-      (participantId) => participantId.toString() === userId.toString()
-    );
+    const existingEntry = evenement.participants?.find((p) => {
+      if (!p?.user) return false;
+      return p.user.toString() === userId.toString();
+    });
 
-    if (dejaInscrit) {
+    // Already registered with the same role — nothing to do
+    if (existingEntry && existingEntry.role === role) {
       return res.status(200).json({
-        message: "Vous êtes déjà inscrit à cet évènement",
+        message: "Vous êtes déjà inscrit à cet évènement avec ce rôle",
         data: evenement,
       });
     }
 
-    evenement.participants = [...(evenement.participants || []), userId];
-    await evenement.save();
+    // Remove any existing registration for this user, then add the new role
+    await Evenement.updateOne(
+      { _id: id },
+      { $pull: { participants: { user: userId } } }
+    );
+    await Evenement.updateOne(
+      { _id: id },
+      { $push: { participants: { user: userId, role } } }
+    );
 
+    const updated = await Evenement.findById(id);
+    const wasSwitch = !!existingEntry;
     return res.status(200).json({
-      message: "Inscription à l'évènement réussie",
-      data: evenement,
+      message: wasSwitch ? "Rôle mis à jour avec succès" : "Inscription à l'évènement réussie",
+      data: updated,
     });
   } catch (error) {
     return res.status(500).json({
