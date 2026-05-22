@@ -60,8 +60,8 @@ async function listDemandes(req, res) {
       // BENEVOLE voit uniquement les demandes validées et ouvertes (pas encore prises en charge)
       filter.statut = 'VALIDEE';
     } else if (req.user.role === 'DONATEUR' || req.user.role === 'DONTEUR') {
-      // DONATEUR voit les demandes validées par l'admin — prêtes à recevoir un don
-      filter.statut = 'VALIDEE';
+      // DONATEUR voit les demandes en attente ET validées (exclut refusées et terminées)
+      filter.statut = { $in: ['EN_ATTENTE', 'VALIDEE'] };
     } else if (req.query.femme) {
       filter.femme = req.query.femme;
     }
