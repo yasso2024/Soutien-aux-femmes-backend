@@ -11,7 +11,10 @@ const getAllEvenements = async (req, res) => {
     const PERSONAL_TYPES = ["RENDEZ_VOUS_MEDICAL", "TRAITEMENT", "RAPPEL"];
 
     let visibilityFilter;
-    if (req.user) {
+    if (req.user?.role === "ADMINISTRATEUR") {
+      // Admin sees all events with no restriction
+      visibilityFilter = {};
+    } else if (req.user) {
       // Authenticated: own events (all types) + public events from others
       visibilityFilter = {
         $or: [
