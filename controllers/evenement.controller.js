@@ -4,20 +4,47 @@ const getAllEvenements = async (req, res) => {
   try {
     console.log('[EVENEMENT] /getAllEvenements endpoint called');
     const { search } = req.query;
-    let filter = {};
+
+    // Personal types are only visible to their creator.
+    // Public types are visible to everyone.
+    const PUBLIC_TYPES = ["ACTION_SOLIDAIRE", "REUNION_ASSOCIATION"];
+    const PERSONAL_TYPES = ["RENDEZ_VOUS_MEDICAL", "TRAITEMENT", "RAPPEL"];
+
+    let visibilityFilter;
+    if (req.user) {
+      // Authenticated: own events (all types) + public events from others
+      visibilityFilter = {
+        $or: [
+          { createdBy: req.user._id },
+          { type: { $in: PUBLIC_TYPES } },
+        ],
+      };
+    } else {
+      // Guest: only public types
+      visibilityFilter = { type: { $in: PUBLIC_TYPES } };
+    }
+
+    let filter = visibilityFilter;
 
     if (search && search.trim()) {
       filter = {
-        $or: [
-          { titre: { $regex: search, $options: "i" } },
-          { description: { $regex: search, $options: "i" } },
-          { lieu: { $regex: search, $options: "i" } },
-          { type: { $regex: search, $options: "i" } },
+        $and: [
+          visibilityFilter,
+          {
+            $or: [
+              { titre: { $regex: search, $options: "i" } },
+              { description: { $regex: search, $options: "i" } },
+              { lieu: { $regex: search, $options: "i" } },
+              { type: { $regex: search, $options: "i" } },
+            ],
+          },
         ],
       };
     }
 
-    const evenements = await Evenement.find(filter).sort({ dateDebut: 1 });
+    const evenements = await Evenement.find(filter)
+      .populate("createdBy", "firstName lastName avatar")
+      .sort({ dateDebut: 1 });
     return res.status(200).json(evenements);
   } catch (error) {
     console.error('[EVENEMENT /getAllEvenements ERROR]', error.message, error.stack);
@@ -30,7 +57,8 @@ const getAllEvenements = async (req, res) => {
 
 const getEvenementById = async (req, res) => {
   try {
-    const evenement = await Evenement.findById(req.params.id);
+    const evenement = await Evenement.findById(req.params.id)
+      .populate("createdBy", "firstName lastName avatar");
 
     if (!evenement) {
       return res.status(404).json({ message: "Évènement introuvable" });
@@ -73,6 +101,7 @@ const createEvenement = async (req, res) => {
       organisateur,
       heure,
       contact,
+      createdBy: req.user?._id || null,
     });
 
     return res.status(201).json({

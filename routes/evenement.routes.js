@@ -9,11 +9,11 @@ const {
   deleteEvenement,
   inscrireEvenement,
 } = require("../controllers/evenement.controller");
-const { protect } = require("../middlewares/auth.middleware");
+const { protect, optionalProtect } = require("../middlewares/auth.middleware");
 
-router.get("/", getAllEvenements);
+router.get("/", optionalProtect, getAllEvenements);
 router.get("/:id", getEvenementById);
-router.post("/", createEvenement);
+router.post("/", protect, createEvenement);
 router.put("/:id", updateEvenement);
 router.delete("/:id", deleteEvenement);
 router.put("/:id/inscrire", protect, inscrireEvenement);

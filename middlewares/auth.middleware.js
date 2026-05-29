@@ -61,4 +61,22 @@ const protect = async (req, res, next) => {
   }
 }
 
-module.exports = { protect };
+// Like protect but doesn't reject unauthenticated requests — just attaches user if token is valid
+const optionalProtect = async (req, res, next) => {
+  try {
+    let token;
+    if (req.headers.authorization && req.headers.authorization.startsWith("Bearer ")) {
+      token = req.headers.authorization.split(" ")[1];
+    }
+    if (token) {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const user = await userModel.findById(decoded.id).select('-password');
+      if (user) req.user = user;
+    }
+  } catch (_) {
+    // ignore token errors — treat as unauthenticated
+  }
+  next();
+};
+
+module.exports = { protect, optionalProtect };
