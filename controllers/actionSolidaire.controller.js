@@ -431,6 +431,14 @@ async function changeActionStatus(req, res) {
     action.statut = statut;
     await action.save();
 
+    // When an action is validated, auto-accept all bénévoles still EN_ATTENTE
+    if (statut === 'VALIDEE') {
+      await affectationModel.updateMany(
+        { action: action._id, statut: 'EN_ATTENTE' },
+        { $set: { statut: 'ACCEPTEE' } }
+      );
+    }
+
     await saveLog({
       action: `${req.user.firstName} a changé le statut de l'action "${action.titre}" à ${statut}`,
       actorId: req.user._id
